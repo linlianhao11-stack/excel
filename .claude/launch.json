@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "excel-agent",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/lin/Desktop/Excel/backend && WORK_DIR=/tmp/excel_work DEEPSEEK_API_KEY=test python3 -m uvicorn main:app --host 127.0.0.1 --port 8000"],
+      "port": 8000
+    }
+  ]
+}
