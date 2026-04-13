@@ -6,10 +6,10 @@ from typing import AsyncGenerator
 
 import httpx
 
+from ..database import get_setting
+
 
 class LLMProvider:
-    """LLM 调用抽象基类"""
-
     async def chat_stream(
         self, messages: list[dict], tools: list[dict] | None = None
     ) -> AsyncGenerator[dict, None]:
@@ -19,15 +19,17 @@ class LLMProvider:
 
 class DeepSeekProvider(LLMProvider):
     def __init__(self):
-        self.api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-        self.base_url = os.environ.get(
-            "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
-        )
-        self.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        # 优先从数据库读取，回退到环境变量
+        self.api_key = get_setting("api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
+        self.base_url = get_setting("base_url", "") or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        self.model = get_setting("model", "") or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
     async def chat_stream(
         self, messages: list[dict], tools: list[dict] | None = None
     ) -> AsyncGenerator[dict, None]:
+        if not self.api_key:
+            raise ValueError("未配置 API Key，请在设置中配置")
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -65,7 +67,4 @@ class DeepSeekProvider(LLMProvider):
 
 
 def get_llm_provider() -> LLMProvider:
-    provider = os.environ.get("LLM_PROVIDER", "deepseek")
-    if provider == "deepseek":
-        return DeepSeekProvider()
-    raise ValueError(f"未知的 LLM provider: {provider}")
+    return DeepSeekProvider()

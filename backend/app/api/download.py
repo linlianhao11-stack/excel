@@ -1,27 +1,32 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from ..services.excel import WORK_DIR
+from .auth import get_current_user
 
 router = APIRouter(prefix="/api", tags=["download"])
 
 
 @router.get("/download")
-async def download_file(path: str):
-    file_path = Path(path)
+async def download_file(filename: str, user: dict = Depends(get_current_user)):
+    # 只接受文件名，不接受路径，防止路径穿越
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    # 只允许安全字符
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', filename):
+        raise HTTPException(400, "非法文件名")
+
+    file_path = WORK_DIR / filename
     if not file_path.exists():
         raise HTTPException(404, "文件不存在")
-    # 安全检查：只允许下载 work 目录下的文件
-    try:
-        file_path.resolve().relative_to(WORK_DIR.resolve())
-    except ValueError:
-        raise HTTPException(403, "无权访问该路径")
+
     return FileResponse(
         path=str(file_path),
-        filename=file_path.name,
+        filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

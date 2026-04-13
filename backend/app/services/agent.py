@@ -175,14 +175,14 @@ async def run_agent(
             yield {"type": "tool_call", "name": name, "code": code}
 
             if name == "query":
-                result = execute_query(code, file_paths)
+                result = await execute_query(code, file_paths)
                 tool_result = (
                     result["output"]
                     if result["success"]
                     else f"错误: {result['output']}"
                 )
             elif name == "execute":
-                result = execute_code(code, file_paths)
+                result = await execute_code(code, file_paths)
                 if result["success"]:
                     output_path = result["output_path"]
                     tool_result = f"执行成功。输出文件已生成。"

@@ -13,9 +13,13 @@ load_dotenv()
 
 app = FastAPI(title="Excel Agent")
 
+# CORS: 收紧来源
+allowed_origins = os.environ.get(
+    "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"
+).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in allowed_origins],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -25,17 +29,25 @@ from app.api.files import router as files_router
 from app.api.chat import router as chat_router
 from app.api.download import router as download_router
 from app.api.auth import router as auth_router
+from app.api.conversations import router as conversations_router
+from app.api.settings import router as settings_router
 
+app.include_router(auth_router)
 app.include_router(files_router)
 app.include_router(chat_router)
 app.include_router(download_router)
-app.include_router(auth_router)
+app.include_router(conversations_router)
+app.include_router(settings_router)
 
 
 @app.on_event("startup")
 async def startup():
-    from app.services.cleanup import cleanup_old_files
+    # 初始化数据库
+    from app.database import init_db
+    init_db()
 
+    # 启动文件清理任务
+    from app.services.cleanup import cleanup_old_files
     asyncio.create_task(cleanup_old_files())
 
 

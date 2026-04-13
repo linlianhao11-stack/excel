@@ -70,11 +70,13 @@
 <script setup>
 import { Search, Play, Download, ChevronDown } from 'lucide-vue-next'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { getDownloadUrl } from '../api'
 
 defineProps({ message: Object })
 
 function renderMarkdown(text) {
-  return marked.parse(text, { breaks: true })
+  const html = marked.parse(text, { breaks: true })
+  return DOMPurify.sanitize(html)
 }
 </script>

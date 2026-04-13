@@ -3,14 +3,14 @@ import { chatStream } from '../api'
 
 const messages = ref([])
 const streaming = ref(false)
+let controller = null
 
 export function useChat() {
-  let controller = null
-
-  function send(text, fileIds) {
-    messages.value.push({ role: 'user', content: text })
+  function send(text, fileIds, conversationId) {
+    messages.value.push({ id: Date.now(), role: 'user', content: text })
 
     const assistantMsg = reactive({
+      id: Date.now() + 1,
       role: 'assistant',
       content: '',
       toolCalls: [],
@@ -21,7 +21,7 @@ export function useChat() {
 
     streaming.value = true
 
-    controller = chatStream(text, fileIds, (event) => {
+    controller = chatStream(text, fileIds, conversationId, (event) => {
       switch (event.type) {
         case 'text':
           assistantMsg.content += event.content
@@ -63,5 +63,21 @@ export function useChat() {
     messages.value = []
   }
 
-  return { messages, streaming, send, stop, clearMessages }
+  function loadFromHistory(historyMessages) {
+    messages.value = historyMessages.map((m, i) => ({
+      id: m.id || Date.now() + i,
+      role: m.role,
+      content: m.content || '',
+      toolCalls: (m.tool_calls || []).map(tc => reactive({
+        name: tc.name,
+        code: tc.code,
+        result: tc.result || null,
+        expanded: false,
+      })),
+      outputPath: m.output_path || null,
+      error: m.error || null,
+    }))
+  }
+
+  return { messages, streaming, send, stop, clearMessages, loadFromHistory }
 }

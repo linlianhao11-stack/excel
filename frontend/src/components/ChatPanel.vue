@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col min-h-0">
     <!-- 消息列表 -->
-    <div ref="scrollContainer" class="flex-1 overflow-y-auto">
+    <div ref="scrollContainer" class="flex-1 overflow-y-auto" @scroll="handleScroll">
       <div class="max-w-3xl mx-auto py-8 px-4">
         <!-- 空状态 -->
         <div
@@ -19,13 +19,13 @@
 
         <!-- 消息列表 -->
         <MessageBubble
-          v-for="(msg, i) in messages"
-          :key="i"
+          v-for="msg in messages"
+          :key="msg.id"
           :message="msg"
         />
 
         <!-- 流式加载指示器 -->
-        <div v-if="streaming && messages.length > 0" class="flex items-center gap-2 text-[#999] text-sm mb-6">
+        <div v-if="streaming && messages.length > 0 && !lastMessageHasContent" class="flex items-center gap-2 text-[#999] text-sm mb-6">
           <div class="flex gap-1">
             <span class="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style="animation-delay: 0ms" />
             <span class="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style="animation-delay: 150ms" />
@@ -41,29 +41,50 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { FileSpreadsheet } from 'lucide-vue-next'
 import { useChat } from '../composables/useChat'
 import { useFiles } from '../composables/useFiles'
+import { useConversations } from '../composables/useConversations'
 import MessageBubble from './MessageBubble.vue'
 import ChatInput from './ChatInput.vue'
 
 const { messages, streaming, send } = useChat()
 const { files } = useFiles()
+const { currentConvId, create } = useConversations()
 const scrollContainer = ref(null)
+const userScrolledUp = ref(false)
 
-function handleSend(text) {
+const lastMessageHasContent = computed(() => {
+  const last = messages.value[messages.value.length - 1]
+  return last && (last.content || last.toolCalls?.length > 0)
+})
+
+async function handleSend(text) {
   const fileIds = files.value.map(f => f.file_id)
-  send(text, fileIds)
+  // 如果没有当前对话，自动创建一个
+  let convId = currentConvId.value
+  if (!convId) {
+    convId = await create()
+  }
+  send(text, fileIds, convId)
 }
 
-// 自动滚动到底部
+function handleScroll() {
+  const el = scrollContainer.value
+  if (!el) return
+  const threshold = 100
+  userScrolledUp.value = el.scrollHeight - el.scrollTop - el.clientHeight > threshold
+}
+
+// 自动滚动到底部（仅当用户没有上滑时）
 watch(
   () => {
     const last = messages.value[messages.value.length - 1]
     return last?.content?.length || last?.toolCalls?.length || messages.value.length
   },
   async () => {
+    if (userScrolledUp.value) return
     await nextTick()
     if (scrollContainer.value) {
       scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
