@@ -43,7 +43,12 @@ export async function deleteFile(fileId) {
   await api.delete(`/files/${fileId}`)
 }
 
-export function chatStream(message, fileIds, conversationId, onEvent) {
+export async function getExcelPreview(fileId) {
+  const { data } = await api.get(`/files/${fileId}/preview`)
+  return data.sheets
+}
+
+export function chatStream(message, fileIds, conversationId, onEvent, imageIds = []) {
   const controller = new AbortController()
   const token = localStorage.getItem('token')
 
@@ -53,7 +58,7 @@ export function chatStream(message, fileIds, conversationId, onEvent) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ message, file_ids: fileIds, conversation_id: conversationId }),
+    body: JSON.stringify({ message, file_ids: fileIds, image_ids: imageIds, conversation_id: conversationId }),
     signal: controller.signal,
   }).then(async (response) => {
     if (response.status === 401) {

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import logging
 import os
 import shlex
 import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+
+logger = logging.getLogger("excel-agent.sandbox")
 
 WORK_DIR = Path(os.environ.get("WORK_DIR", "/data/work"))
 TIMEOUT = 30
@@ -39,6 +42,7 @@ def check_code_safety(code: str) -> str | None:
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
+        logger.warning("代码安全检查-语法错误: %s", e)
         return f"语法错误: {e}"
 
     for node in ast.walk(tree):
@@ -84,6 +88,8 @@ def _run_script(full_code: str) -> dict:
         f.write(full_code)
         script_path = f.name
 
+    logger.debug("执行脚本 path=%s code_len=%d", script_path, len(full_code))
+
     try:
         result = subprocess.run(
             ["python3", script_path],
@@ -97,12 +103,15 @@ def _run_script(full_code: str) -> dict:
                 "PYTHONPATH": "",
             },
         )
+        if result.returncode != 0:
+            logger.warning("脚本执行失败 returncode=%d stderr=%s", result.returncode, result.stderr[:500])
         return {
             "returncode": result.returncode,
             "stdout": result.stdout[:MAX_OUTPUT_LEN],
             "stderr": result.stderr[:MAX_OUTPUT_LEN],
         }
     except subprocess.TimeoutExpired:
+        logger.error("脚本执行超时 timeout=%ds", TIMEOUT)
         return {
             "returncode": -1,
             "stdout": "",

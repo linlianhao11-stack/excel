@@ -24,13 +24,19 @@
           :message="msg"
         />
 
-        <!-- 流式加载指示器 -->
-        <div v-if="streaming && messages.length > 0 && !lastMessageHasContent" class="flex items-center gap-2 text-[#999] text-sm mb-6">
-          <div class="flex gap-1">
+        <!-- 状态指示器 -->
+        <div v-if="status" class="flex items-center gap-2 text-[#999] text-sm mb-6 pl-0.5">
+          <div class="flex gap-1" v-if="status === 'thinking'">
             <span class="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style="animation-delay: 0ms" />
             <span class="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style="animation-delay: 150ms" />
             <span class="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style="animation-delay: 300ms" />
           </div>
+          <svg v-else class="w-4 h-4 animate-spin text-[#999]" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" opacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span class="text-xs">{{ statusLabel }}</span>
+          <span v-if="elapsed > 0" class="text-xs text-[#bbb]">{{ elapsed }}s</span>
         </div>
       </div>
     </div>
@@ -41,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, onUnmounted } from 'vue'
 import { FileSpreadsheet } from 'lucide-vue-next'
 import { useChat } from '../composables/useChat'
 import { useFiles } from '../composables/useFiles'
@@ -49,25 +55,56 @@ import { useConversations } from '../composables/useConversations'
 import MessageBubble from './MessageBubble.vue'
 import ChatInput from './ChatInput.vue'
 
-const { messages, streaming, send } = useChat()
+const { messages, streaming, status, send } = useChat()
 const { files } = useFiles()
 const { currentConvId, create } = useConversations()
 const scrollContainer = ref(null)
 const userScrolledUp = ref(false)
 
-const lastMessageHasContent = computed(() => {
-  const last = messages.value[messages.value.length - 1]
-  return last && (last.content || last.toolCalls?.length > 0)
+// 计时器
+const elapsed = ref(0)
+let timerInterval = null
+let timerStart = 0
+
+watch(status, (val) => {
+  if (val) {
+    timerStart = Date.now()
+    elapsed.value = 0
+    if (!timerInterval) {
+      timerInterval = setInterval(() => {
+        elapsed.value = Math.floor((Date.now() - timerStart) / 1000)
+      }, 1000)
+    }
+  } else {
+    if (timerInterval) {
+      clearInterval(timerInterval)
+      timerInterval = null
+    }
+    elapsed.value = 0
+  }
 })
 
-async function handleSend(text) {
+onUnmounted(() => {
+  if (timerInterval) clearInterval(timerInterval)
+})
+
+const statusLabel = computed(() => {
+  switch (status.value) {
+    case 'thinking': return '分析中'
+    case 'running': return '执行代码中'
+    case 'verifying': return '验证结果中'
+    case 'reporting': return '生成报告中'
+    default: return ''
+  }
+})
+
+async function handleSend(text, imageIds = []) {
   const fileIds = files.value.map(f => f.file_id)
-  // 如果没有当前对话，自动创建一个
   let convId = currentConvId.value
   if (!convId) {
     convId = await create()
   }
-  send(text, fileIds, convId)
+  send(text, fileIds, convId, imageIds)
 }
 
 function handleScroll() {
@@ -77,7 +114,6 @@ function handleScroll() {
   userScrolledUp.value = el.scrollHeight - el.scrollTop - el.clientHeight > threshold
 }
 
-// 自动滚动到底部（仅当用户没有上滑时）
 watch(
   () => {
     const last = messages.value[messages.value.length - 1]

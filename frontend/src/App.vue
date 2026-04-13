@@ -20,12 +20,13 @@
           <span
             v-for="f in files"
             :key="f.file_id"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f4f4f4] text-[#555] text-xs font-medium rounded-lg border border-[#e5e5e5] shrink-0"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f4f4f4] text-[#555] text-xs font-medium rounded-lg border border-[#e5e5e5] shrink-0 cursor-pointer hover:bg-[#eee] transition-colors"
+            @click="openPreview(f)"
           >
             <FileSpreadsheet class="w-3 h-3 text-green-600" />
             {{ f.filename }}
             <button
-              @click="remove(f.file_id)"
+              @click.stop="remove(f.file_id)"
               class="ml-0.5 text-[#999] hover:text-[#333] transition-colors"
             >
               <X class="w-3 h-3" />
@@ -40,6 +41,14 @@
 
     <!-- 设置弹窗 -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
+
+    <!-- Excel 预览弹窗 -->
+    <ExcelPreview
+      v-if="previewFile"
+      :file-id="previewFile.file_id"
+      :filename="previewFile.filename"
+      @close="previewFile = null"
+    />
   </div>
 </template>
 
@@ -54,6 +63,7 @@ import LoginPage from './components/LoginPage.vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import SettingsModal from './components/SettingsModal.vue'
+import ExcelPreview from './components/ExcelPreview.vue'
 
 const { isLoggedIn } = useAuth()
 const { files, remove, clear: clearFiles } = useFiles()
@@ -61,6 +71,11 @@ const { clearMessages, loadFromHistory } = useChat()
 const { create, select, currentConvId } = useConversations()
 
 const showSettings = ref(false)
+const previewFile = ref(null)
+
+function openPreview(file) {
+  previewFile.value = file
+}
 
 async function handleNewChat() {
   clearMessages()

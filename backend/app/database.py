@@ -81,8 +81,9 @@ def init_db() -> None:
 
     # 从环境变量初始化默认设置（如果数据库中没有）
     defaults = {
+        "provider": os.environ.get("LLM_PROVIDER", "deepseek"),
         "api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
-        "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
     }
     for key, value in defaults.items():

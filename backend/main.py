@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,6 +12,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
+
+# ── 日志配置 ──
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+)
+# httpx / httpcore 太吵，只打 WARNING
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+logger = logging.getLogger("excel-agent")
 
 app = FastAPI(title="Excel Agent")
 
@@ -42,9 +58,10 @@ app.include_router(settings_router)
 
 @app.on_event("startup")
 async def startup():
-    # 初始化数据库
     from app.database import init_db
     init_db()
+    logger.info("数据库初始化完成")
+    logger.info("LOG_LEVEL=%s", LOG_LEVEL)
 
     # 启动文件清理任务
     from app.services.cleanup import cleanup_old_files
