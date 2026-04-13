@@ -47,14 +47,14 @@
       </div>
 
       <!-- 下载按钮 -->
-      <a
+      <button
         v-if="message.outputPath"
-        :href="getDownloadUrl(message.outputPath)"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors"
+        @click="handleDownload(message.outputPath)"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors cursor-pointer"
       >
         <Download class="w-4 h-4" />
         下载结果文件
-      </a>
+      </button>
 
       <!-- 错误 -->
       <div
@@ -71,12 +71,20 @@
 import { Search, Play, Download, ChevronDown } from 'lucide-vue-next'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { getDownloadUrl } from '../api'
+import { downloadFile } from '../api'
 
 defineProps({ message: Object })
 
 function renderMarkdown(text) {
   const html = marked.parse(text, { breaks: true })
   return DOMPurify.sanitize(html)
+}
+
+async function handleDownload(path) {
+  try {
+    await downloadFile(path)
+  } catch {
+    alert('下载失败，请重试')
+  }
 }
 </script>

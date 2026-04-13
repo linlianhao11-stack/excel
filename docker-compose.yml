@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "8080:80"
+      - "8910:80"
     volumes:
       - excel_data:/data
     env_file:

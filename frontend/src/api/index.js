@@ -96,10 +96,20 @@ export function chatStream(message, fileIds, conversationId, onEvent) {
   return controller
 }
 
-export function getDownloadUrl(path) {
-  // Now uses filename only, not full path
+export async function downloadFile(path) {
   const filename = path.split('/').pop()
-  return `/api/download?filename=${encodeURIComponent(filename)}`
+  const token = localStorage.getItem('token')
+  const response = await fetch(`/api/download?filename=${encodeURIComponent(filename)}&token=${encodeURIComponent(token)}`)
+  if (!response.ok) throw new Error('下载失败')
+  const blob = await response.blob()
+  const reader = new FileReader()
+  reader.onload = () => {
+    const a = document.createElement('a')
+    a.href = reader.result
+    a.download = filename
+    a.click()
+  }
+  reader.readAsDataURL(blob)
 }
 
 // Conversations API

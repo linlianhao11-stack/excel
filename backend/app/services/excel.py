@@ -39,7 +39,7 @@ def profile_excel(path: str) -> dict[str, Any]:
         result["Sheet1"] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
-            "sample": sample_df.fillna("").to_dict("records"),
+            "sample": sample_df.fillna("").astype(str).to_dict("records"),
             "row_count": len(df),
             "col_count": len(df.columns),
         }
@@ -53,7 +53,7 @@ def profile_excel(path: str) -> dict[str, Any]:
         result[sheet] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
-            "sample": sample_df.fillna("").to_dict("records"),
+            "sample": sample_df.fillna("").astype(str).to_dict("records"),
             "row_count": len(df),
             "col_count": len(df.columns),
         }

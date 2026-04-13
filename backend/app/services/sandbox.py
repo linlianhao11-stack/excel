@@ -14,7 +14,7 @@ TIMEOUT = 30
 MAX_OUTPUT_LEN = 5000
 
 BLOCKED_MODULES = {
-    "os", "sys", "subprocess", "shutil", "pathlib",
+    "os", "sys", "subprocess", "pathlib",
     "socket", "http", "urllib", "requests", "httpx",
     "importlib", "ctypes", "signal", "threading", "multiprocessing",
     "pickle", "shelve", "marshal", "code", "codeop",
@@ -117,7 +117,10 @@ def _build_header(file_paths: dict[str, str], output_path: str | None = None) ->
         "import pandas as pd\n"
         "import numpy as np\n"
         "import re\n"
-        "from datetime import datetime, timedelta\n\n"
+        "import copy\n"
+        "import shutil\n"
+        "from datetime import datetime, timedelta\n"
+        "from openpyxl import load_workbook\n\n"
     )
     for var_name, var_path in file_paths.items():
         # 用 shlex.quote 防止路径注入

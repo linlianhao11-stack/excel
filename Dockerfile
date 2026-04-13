@@ -21,4 +21,4 @@ RUN mkdir -p /data/work /data/db
 
 EXPOSE 80
 
-CMD nginx && uvicorn backend.main:app --host 127.0.0.1 --port 8000
+CMD nginx && cd /app/backend && uvicorn main:app --host 127.0.0.1 --port 8000

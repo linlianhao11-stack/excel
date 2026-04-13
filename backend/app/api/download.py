@@ -7,13 +7,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from ..services.excel import WORK_DIR
-from .auth import get_current_user
+from .auth import get_current_user, JWT_SECRET
 
 router = APIRouter(prefix="/api", tags=["download"])
 
 
 @router.get("/download")
-async def download_file(filename: str, user: dict = Depends(get_current_user)):
+async def download_file(filename: str, token: str = ""):
+    # 支持 query 参数传 token（浏览器直接下载场景）
+    if not token:
+        raise HTTPException(401, "未登录")
+    import jwt as pyjwt
+    try:
+        pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception:
+        raise HTTPException(401, "无效的登录凭证")
     # 只接受文件名，不接受路径，防止路径穿越
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "非法文件名")
