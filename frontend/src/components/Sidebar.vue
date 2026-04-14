@@ -9,7 +9,7 @@
       transitionDuration: 'var(--duration-slow)'
     }"
   >
-    <SidebarHeader />
+    <SidebarHeader @newChat="$emit('newChat')" />
     <ConversationList
       :conversations="conversations"
       :currentConvId="currentConvId"
@@ -34,7 +34,7 @@ import SidebarHeader from './layout/SidebarHeader.vue'
 import ConversationList from './layout/ConversationList.vue'
 import SidebarFooter from './layout/SidebarFooter.vue'
 
-const emit = defineEmits(['openSettings', 'selectConversation'])
+const emit = defineEmits(['openSettings', 'selectConversation', 'newChat'])
 
 const { user, logout } = useAuth()
 const { conversations, currentConvId, loading, load, remove, select } = useConversations()

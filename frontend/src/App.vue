@@ -8,6 +8,7 @@
     <Sidebar
       @openSettings="currentView = 'settings'"
       @selectConversation="handleSelectConversation"
+      @newChat="handleNewChat"
     />
 
     <!-- 主区域 -->

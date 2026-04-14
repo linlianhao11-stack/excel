@@ -95,7 +95,7 @@ class OpenAICompatibleProvider(LLMProvider):
         )
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=300) as client:
                 async with client.stream(
                     "POST", url, headers=headers, json=body,
                 ) as resp:

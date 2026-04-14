@@ -9,7 +9,6 @@ let controller = null
 function _handleEvent(assistantMsg, event, conversationId) {
   switch (event.type) {
     case 'text':
-      status.value = null
       assistantMsg.content += event.content
       break
     case 'tool_call':
