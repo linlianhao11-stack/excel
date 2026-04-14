@@ -1,38 +1,51 @@
 <template>
-  <div class="border-t border-[#e5e5e5] bg-white px-4 py-3">
-    <div class="max-w-3xl mx-auto">
+  <div :class="centered ? 'px-4 py-3' : 'px-4 py-3 border-t'" :style="centered ? {} : { borderColor: 'var(--border)' }">
+    <div :class="centered ? 'max-w-[560px] mx-auto' : 'max-w-3xl mx-auto'">
       <div
-        class="border border-[#d9d9d9] rounded-2xl px-3 py-2 focus-within:border-[#999] focus-within:shadow-sm transition-all bg-white"
+        class="rounded-2xl transition-all"
+        :style="{
+          background: 'var(--surface)',
+          border: '1px solid ' + (focused ? 'var(--primary)' : 'var(--input-border)'),
+          boxShadow: focused ? '0 0 0 3px var(--primary-ring)' : 'none'
+        }"
         @dragover.prevent="dragOver = true"
         @dragleave="dragOver = false"
         @drop.prevent="handleDrop"
-        :class="{ 'border-orange-400 bg-orange-50/30': dragOver }"
       >
-        <!-- 图片预览区 -->
-        <div v-if="pendingImages.length" class="flex flex-wrap gap-2 mb-2 pt-1">
-          <div
-            v-for="img in pendingImages"
-            :key="img.file_id"
-            class="relative group w-16 h-16 rounded-lg overflow-hidden border border-[#e5e5e5]"
-          >
-            <img :src="img.previewUrl" class="w-full h-full object-cover" />
-            <button
-              @click="removeImage(img.file_id)"
-              class="absolute -top-1 -right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <X class="w-3 h-3" />
-            </button>
-          </div>
+        <!-- 附件预览层 -->
+        <AttachmentBar
+          :files="files"
+          :images="pendingImages"
+          @removeFile="handleRemoveFile"
+          @removeImage="removeImage"
+          @previewFile="$emit('previewFile', $event)"
+        />
+
+        <!-- 文本输入层 -->
+        <div class="flex items-end gap-2 px-4 py-3">
+          <textarea
+            ref="textareaRef"
+            v-model="text"
+            @keydown.enter.exact.prevent="handleSend"
+            @paste="handlePaste"
+            @input="autoResize"
+            @focus="focused = true"
+            @blur="focused = false"
+            rows="1"
+            placeholder="输入消息..."
+            class="flex-1 resize-none bg-transparent text-[15px] focus:outline-none max-h-40 leading-relaxed py-0.5 placeholder:text-[var(--text-placeholder)]"
+            :style="{ color: 'var(--text)' }"
+          />
         </div>
 
-        <div class="flex items-end gap-2">
-          <!-- 上传按钮 -->
+        <!-- 工具栏层 -->
+        <div class="flex items-center justify-between px-3 pb-2.5">
           <button
             @click="$refs.fileInput.click()"
-            class="p-1.5 text-[#999] hover:text-[#555] rounded-lg hover:bg-[#f4f4f4] transition-colors shrink-0 mb-0.5"
-            title="上传文件（Excel / 图片）"
+            class="p-1 rounded-md transition-colors"
+            title="上传文件"
           >
-            <Paperclip class="w-5 h-5" />
+            <Paperclip class="w-[18px] h-[18px]" style="color: var(--text-placeholder)" />
           </button>
           <input
             ref="fileInput"
@@ -42,81 +55,54 @@
             class="hidden"
             @change="handleFileSelect"
           />
-
-          <!-- 粘贴截图按钮 -->
-          <button
-            @click="pasteFromClipboard"
-            class="p-1.5 text-[#999] hover:text-[#555] rounded-lg hover:bg-[#f4f4f4] transition-colors shrink-0 mb-0.5"
-            title="粘贴剪贴板截图 (Alt+S)"
-          >
-            <Scissors class="w-5 h-5" />
-          </button>
-
-          <!-- 文本输入 -->
-          <textarea
-            ref="textareaRef"
-            v-model="text"
-            @keydown.enter.exact.prevent="handleSend"
-            @paste="handlePaste"
-            @input="autoResize"
-            rows="1"
-            placeholder="输入消息...  Ctrl+V 粘贴截图 / Alt+S 从剪贴板读取"
-            class="flex-1 resize-none bg-transparent text-[15px] text-[#1a1a1a] placeholder-[#999] focus:outline-none max-h-40 leading-relaxed py-1"
-          />
-
-          <!-- 发送按钮 -->
           <button
             @click="handleSend"
             :disabled="!canSend"
-            :class="[
-              'p-2 rounded-xl transition-all shrink-0 mb-0.5',
-              canSend
-                ? 'bg-[#1a1a1a] text-white hover:bg-[#333] scale-100'
-                : 'bg-[#e5e5e5] text-[#999] scale-95'
-            ]"
+            class="w-8 h-8 rounded-[10px] flex items-center justify-center transition-all"
+            :style="{
+              background: canSend ? 'var(--text)' : 'var(--surface-hover)',
+              color: canSend ? 'var(--primary-foreground)' : 'var(--text-placeholder)',
+              transform: canSend ? 'scale(1)' : 'scale(0.95)'
+            }"
           >
             <ArrowUp class="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <!-- 拖拽提示 -->
-      <p v-if="dragOver" class="text-xs text-orange-500 mt-1.5 text-center font-medium">
+      <p v-if="dragOver" class="text-xs mt-1.5 text-center font-medium" style="color: var(--warning-emphasis)">
         松开即可上传文件
       </p>
-
-      <!-- 上传中提示 -->
-      <p v-if="uploading || imageUploading" class="text-xs text-[#999] mt-1.5 text-center">
+      <p v-if="uploading || imageUploading" class="text-xs mt-1.5 text-center" style="color: var(--text-placeholder)">
         上传中...
-      </p>
-
-      <!-- 剪贴板提示 -->
-      <p v-if="clipboardHint" class="text-xs text-orange-500 mt-1.5 text-center">
-        {{ clipboardHint }}
       </p>
     </div>
   </div>
-
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Paperclip, ArrowUp, X, Scissors } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { Paperclip, ArrowUp } from 'lucide-vue-next'
 import { useFiles } from '../composables/useFiles'
 import { useChat } from '../composables/useChat'
 import { uploadFiles as apiUpload } from '../api'
+import AttachmentBar from './common/AttachmentBar.vue'
 
-const emit = defineEmits(['send'])
+defineProps({
+  centered: { type: Boolean, default: false }
+})
 
-const { files, uploading, upload } = useFiles()
+const emit = defineEmits(['send', 'previewFile'])
+
+const { files, uploading, upload, remove: removeFile } = useFiles()
 const { streaming } = useChat()
 
 const text = ref('')
 const dragOver = ref(false)
+const focused = ref(false)
 const textareaRef = ref(null)
 const pendingImages = ref([])
 const imageUploading = ref(false)
-const clipboardHint = ref('')
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 const EXCEL_EXTS = ['.xlsx', '.xls', '.csv']
@@ -125,9 +111,7 @@ function isImage(filename) {
   return IMAGE_EXTS.some(ext => filename.toLowerCase().endsWith(ext))
 }
 
-const canSend = computed(
-  () => text.value.trim() && !streaming.value
-)
+const canSend = computed(() => text.value.trim() && !streaming.value)
 
 function handleSend() {
   if (!canSend.value) return
@@ -168,38 +152,14 @@ function removeImage(fileId) {
   }
 }
 
-// 从剪贴板读取截图
-async function pasteFromClipboard() {
-  try {
-    const items = await navigator.clipboard.read()
-    const imageFiles = []
-    for (const item of items) {
-      const imageType = item.types.find(t => t.startsWith('image/'))
-      if (imageType) {
-        const blob = await item.getType(imageType)
-        imageFiles.push(new File([blob], `screenshot_${Date.now()}.png`, { type: 'image/png' }))
-      }
-    }
-    if (imageFiles.length) {
-      await uploadImages(imageFiles)
-    } else {
-      showHint('剪贴板无图片，请先截图 (⌘⇧4 / Win+Shift+S)')
-    }
-  } catch {
-    showHint('剪贴板无图片，请先截图 (⌘⇧4 / Win+Shift+S)')
-  }
-}
-
-function showHint(msg) {
-  clipboardHint.value = msg
-  setTimeout(() => { clipboardHint.value = '' }, 3000)
+function handleRemoveFile(fileId) {
+  removeFile(fileId)
 }
 
 async function handlePaste(e) {
   const items = Array.from(e.clipboardData?.items || [])
   const imageItems = items.filter(item => item.type.startsWith('image/'))
   if (!imageItems.length) return
-
   e.preventDefault()
   const imageFiles = imageItems
     .map(item => item.getAsFile())
@@ -216,7 +176,6 @@ async function handleDrop(e) {
   const allFiles = Array.from(e.dataTransfer.files)
   const excelFiles = allFiles.filter(f => EXCEL_EXTS.some(ext => f.name.toLowerCase().endsWith(ext)))
   const imageFiles = allFiles.filter(f => isImage(f.name))
-
   if (excelFiles.length) await upload(excelFiles)
   if (imageFiles.length) await uploadImages(imageFiles)
 }
@@ -225,20 +184,8 @@ async function handleFileSelect(e) {
   const allFiles = Array.from(e.target.files)
   const excelFiles = allFiles.filter(f => EXCEL_EXTS.some(ext => f.name.toLowerCase().endsWith(ext)))
   const imageFiles = allFiles.filter(f => isImage(f.name))
-
   if (excelFiles.length) await upload(excelFiles)
   if (imageFiles.length) await uploadImages(imageFiles)
   e.target.value = ''
 }
-
-// Alt+S 全局快捷键
-function handleGlobalKeydown(e) {
-  if (e.altKey && e.key.toLowerCase() === 's') {
-    e.preventDefault()
-    pasteFromClipboard()
-  }
-}
-
-onMounted(() => document.addEventListener('keydown', handleGlobalKeydown))
-onUnmounted(() => document.removeEventListener('keydown', handleGlobalKeydown))
 </script>

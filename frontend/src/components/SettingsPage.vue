@@ -1,0 +1,165 @@
+<template>
+  <div class="flex-1 flex flex-col min-h-0 relative">
+    <TopControls @newChat="$emit('newChat')" />
+
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-xl px-6 py-14 mx-auto space-y-8">
+        <div>
+          <h1 class="text-2xl font-semibold" style="color: var(--text)">设置</h1>
+          <p class="text-[14px] mt-1" style="color: var(--text-muted)">
+            管理 AI 模型配置、用户账号和安全设置
+          </p>
+        </div>
+
+        <div class="h-px" style="background: var(--border)" />
+
+        <AiModelSettings
+          :provider="provider"
+          :apiKey="apiKey"
+          :apiKeyMasked="apiKeyMasked"
+          :baseUrl="baseUrl"
+          :defaultBaseUrl="currentProviderBaseUrl"
+          :model="model"
+          :modelList="currentModelList"
+          :saving="saving"
+          :saveSuccess="saveSuccess"
+          @update:provider="onProviderChange"
+          @update:apiKey="apiKey = $event"
+          @update:baseUrl="baseUrl = $event"
+          @update:model="model = $event"
+          @save="saveSettings"
+        />
+
+        <div class="h-px" style="background: var(--border)" />
+
+        <UserManagement
+          v-if="isAdmin"
+          :users="userList"
+          :currentUserId="currentUser?.id"
+          :error="userError"
+          @addUser="handleAddUser"
+          @deleteUser="handleDeleteUser"
+        />
+
+        <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
+
+        <ChangePassword
+          :success="pwSuccess"
+          :error="pwError"
+          @changePassword="handleChangePassword"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useAuth } from '../composables/useAuth'
+import TopControls from './layout/TopControls.vue'
+import AiModelSettings from './settings/AiModelSettings.vue'
+import UserManagement from './settings/UserManagement.vue'
+import ChangePassword from './settings/ChangePassword.vue'
+import {
+  getSettings, updateSettings,
+  listUsers, createUser, deleteUser, changePassword
+} from '../api'
+
+defineEmits(['newChat'])
+
+const { user: currentUser, isAdmin } = useAuth()
+
+const provider = ref('deepseek')
+const providers = ref({})
+const apiKey = ref('')
+const apiKeyMasked = ref('')
+const baseUrl = ref('')
+const model = ref('')
+const saving = ref(false)
+const saveSuccess = ref(false)
+
+const currentModelList = computed(() => providers.value[provider.value]?.models || [])
+const currentProviderBaseUrl = computed(() => providers.value[provider.value]?.default_base_url || '')
+
+function onProviderChange(val) {
+  provider.value = val
+  const cfg = providers.value[val]
+  if (cfg) {
+    baseUrl.value = cfg.default_base_url
+    model.value = cfg.models[0] || ''
+  }
+  apiKey.value = ''
+  apiKeyMasked.value = ''
+}
+
+const userList = ref([])
+const userError = ref('')
+const pwSuccess = ref(false)
+const pwError = ref('')
+
+async function loadSettings() {
+  try {
+    const data = await getSettings()
+    provider.value = data.provider || 'deepseek'
+    providers.value = data.providers || {}
+    apiKeyMasked.value = data.api_key_masked
+    baseUrl.value = data.base_url
+    model.value = data.model
+  } catch { /* 静默处理 */ }
+}
+
+async function saveSettings() {
+  saving.value = true
+  saveSuccess.value = false
+  try {
+    const updates = { provider: provider.value, base_url: baseUrl.value, model: model.value }
+    if (apiKey.value) updates.api_key = apiKey.value
+    await updateSettings(updates)
+    saveSuccess.value = true
+    apiKey.value = ''
+    await loadSettings()
+    setTimeout(() => (saveSuccess.value = false), 2000)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function loadUsers() {
+  if (!isAdmin.value) return
+  try {
+    userList.value = await listUsers()
+  } catch { /* 静默处理 */ }
+}
+
+async function handleAddUser({ username, password }) {
+  userError.value = ''
+  try {
+    await createUser(username, password, false)
+    await loadUsers()
+  } catch (e) {
+    userError.value = e.response?.data?.detail || '添加失败'
+  }
+}
+
+async function handleDeleteUser(userId) {
+  await deleteUser(userId)
+  await loadUsers()
+}
+
+async function handleChangePassword({ oldPassword, newPassword }) {
+  pwError.value = ''
+  pwSuccess.value = false
+  try {
+    await changePassword(oldPassword, newPassword)
+    pwSuccess.value = true
+    setTimeout(() => (pwSuccess.value = false), 2000)
+  } catch (e) {
+    pwError.value = e.response?.data?.detail || '修改失败'
+  }
+}
+
+onMounted(() => {
+  loadSettings()
+  loadUsers()
+})
+</script>
