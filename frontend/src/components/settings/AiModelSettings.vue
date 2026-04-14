@@ -7,15 +7,12 @@
     <div class="space-y-4 max-w-md">
       <div>
         <label class="block text-[13px] font-medium mb-1.5" style="color: var(--text-secondary)">服务商</label>
-        <select
-          :value="provider"
-          @change="$emit('update:provider', $event.target.value)"
-          class="w-full px-3 py-2.5 rounded-lg text-[14px] focus:outline-none"
-          :style="{ border: '1px solid var(--input-border)', color: 'var(--text)', background: 'var(--surface)' }"
-        >
-          <option value="deepseek">DeepSeek</option>
-          <option value="aliyun">阿里云（通义千问）</option>
-        </select>
+        <AppSelect
+          :modelValue="provider"
+          @update:modelValue="$emit('update:provider', $event)"
+          :options="providerOptions"
+          placeholder="选择服务商"
+        />
       </div>
       <div>
         <label class="block text-[13px] font-medium mb-1.5" style="color: var(--text-secondary)">API Key</label>
@@ -49,14 +46,12 @@
       </div>
       <div>
         <label class="block text-[13px] font-medium mb-1.5" style="color: var(--text-secondary)">模型</label>
-        <select
-          :value="model"
-          @change="$emit('update:model', $event.target.value)"
-          class="w-full px-3 py-2.5 rounded-lg text-[14px] focus:outline-none"
-          :style="{ border: '1px solid var(--input-border)', color: 'var(--text)', background: 'var(--surface)' }"
-        >
-          <option v-for="m in modelList" :key="m" :value="m">{{ m }}</option>
-        </select>
+        <AppSelect
+          :modelValue="model"
+          @update:modelValue="$emit('update:model', $event)"
+          :options="modelList"
+          placeholder="选择模型"
+        />
       </div>
       <div class="flex items-center gap-3">
         <button
@@ -76,8 +71,14 @@
 <script setup>
 import { ref } from 'vue'
 import { Bot, Eye, EyeOff } from 'lucide-vue-next'
+import AppSelect from '../common/AppSelect.vue'
 
 const showKey = ref(false)
+
+const providerOptions = [
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'aliyun', label: '阿里云（通义千问）' },
+]
 
 defineProps({
   provider: String,
