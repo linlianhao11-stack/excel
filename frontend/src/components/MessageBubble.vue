@@ -43,7 +43,7 @@
             <div class="w-5 h-5 rounded-md flex items-center justify-center" :class="group.name === 'query' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'">
               <component :is="group.name === 'query' ? Search : Play" class="w-3 h-3" />
             </div>
-            <span class="font-medium text-[#555] shrink-0">{{ group.name === 'query' ? '探索数据' : '执行处理' }}</span>
+            <span class="font-medium text-[#555] shrink-0">{{ toolLabel(group.name) }}</span>
             <span class="text-xs text-[#aaa] truncate font-mono">{{ codePreview(group.calls[0].code) }}</span>
             <span v-if="group.calls[0].result !== null" class="text-xs text-green-600 shrink-0">完成</span>
             <span v-else class="text-xs text-orange-500 shrink-0 animate-pulse">运行中...</span>
@@ -70,7 +70,7 @@
             <div class="w-5 h-5 rounded-md flex items-center justify-center" :class="group.name === 'query' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'">
               <component :is="group.name === 'query' ? Search : Play" class="w-3 h-3" />
             </div>
-            <span class="font-medium text-[#555] shrink-0">{{ group.name === 'query' ? '探索数据' : '执行处理' }}</span>
+            <span class="font-medium text-[#555] shrink-0">{{ toolLabel(group.name) }}</span>
             <span class="text-xs text-[#888] bg-[#eee] px-1.5 py-0.5 rounded-full font-medium shrink-0">{{ group.calls.length }}</span>
             <span v-if="groupAllDone(group)" class="text-xs text-green-600 shrink-0">完成</span>
             <span v-else class="text-xs text-orange-500 shrink-0 animate-pulse">{{ groupDoneCount(group) }}/{{ group.calls.length }}</span>
@@ -108,7 +108,25 @@
         </template>
       </div>
 
-      <!-- 下载按钮 -->
+      <!-- Diff 审查面板 -->
+      <DiffReview
+        v-if="message.diff"
+        :diff="message.diff"
+        :conversationId="message.conversationId"
+        @approved="onDiffApproved"
+      />
+
+      <!-- Create 摘要 -->
+      <div v-if="message.createSummary && !message.createSummary.error" class="border border-[#e5e5e5] rounded-xl overflow-hidden bg-white">
+        <div class="px-5 py-3">
+          <h3 class="text-sm font-semibold text-[#1a1a1a]">新文件已生成</h3>
+          <div v-for="(sheet, name) in message.createSummary.sheets" :key="name" class="mt-2 text-sm text-[#555]">
+            <span class="font-medium">{{ name }}</span>：{{ sheet.row_count }} 行 × {{ sheet.col_count }} 列
+          </div>
+        </div>
+      </div>
+
+      <!-- 下载按钮（审批通过后 或 create 模式） -->
       <button
         v-if="message.outputPath"
         @click="handleDownload(message.outputPath)"
@@ -135,8 +153,13 @@ import { Search, Play, Download, ChevronDown } from 'lucide-vue-next'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { downloadFile } from '../api'
+import DiffReview from './DiffReview.vue'
 
 const props = defineProps({ message: Object })
+
+function onDiffApproved(outputPath) {
+  props.message.outputPath = outputPath
+}
 
 // 分组展开状态
 const groupExpanded = reactive({})
@@ -165,6 +188,13 @@ function groupAllDone(group) {
 
 function groupDoneCount(group) {
   return group.calls.filter(tc => tc.result !== null).length
+}
+
+function toolLabel(name) {
+  if (name === 'query') return '探索数据'
+  if (name === 'modify') return '修改文件'
+  if (name === 'create') return '生成文件'
+  return '执行处理'
 }
 
 function codePreview(code) {

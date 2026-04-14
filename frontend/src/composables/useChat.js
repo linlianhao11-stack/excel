@@ -1,10 +1,62 @@
 import { ref, reactive } from 'vue'
-import { chatStream } from '../api'
+import { chatStream, rejectDiffStream } from '../api'
 
 const messages = ref([])
 const streaming = ref(false)
-const status = ref(null) // null | 'thinking' | 'running' | 'verifying' | 'reporting'
+const status = ref(null) // null | 'thinking' | 'running' | 'verifying' | 'reporting' | 'reviewing'
 let controller = null
+
+function _handleEvent(assistantMsg, event, conversationId) {
+  switch (event.type) {
+    case 'text':
+      status.value = null
+      assistantMsg.content += event.content
+      break
+    case 'tool_call':
+      status.value = 'running'
+      assistantMsg.toolCalls.push(reactive({
+        name: event.name,
+        code: event.code,
+        result: null,
+        expanded: false,
+      }))
+      break
+    case 'tool_result': {
+      status.value = 'thinking'
+      const lastCall = assistantMsg.toolCalls[assistantMsg.toolCalls.length - 1]
+      if (lastCall) lastCall.result = event.result
+      break
+    }
+    case 'phase':
+      status.value = event.name // 'verifying' | 'reporting'
+      break
+    case 'diff_review':
+      status.value = 'reviewing'
+      assistantMsg.diff = event.diff
+      assistantMsg.conversationId = conversationId
+      break
+    case 'create_summary':
+      assistantMsg.createSummary = event.summary
+      break
+    case 'output_ready':
+      assistantMsg.outputPath = event.output_path
+      break
+    case 'done':
+      status.value = null
+      assistantMsg.outputPath = event.output_path || assistantMsg.outputPath
+      streaming.value = false
+      break
+    case 'error':
+      status.value = null
+      assistantMsg.error = event.message
+      streaming.value = false
+      break
+    case 'stream_end':
+      status.value = null
+      streaming.value = false
+      break
+  }
+}
 
 export function useChat() {
   function send(text, fileIds, conversationId, imageIds = []) {
@@ -22,6 +74,9 @@ export function useChat() {
       toolCalls: [],
       outputPath: null,
       error: null,
+      diff: null,
+      createSummary: null,
+      conversationId: null,
     })
     messages.value.push(assistantMsg)
 
@@ -30,50 +85,31 @@ export function useChat() {
 
     controller = chatStream(
       text, fileIds, conversationId,
-      (event) => {
-        switch (event.type) {
-          case 'text':
-            status.value = null
-            assistantMsg.content += event.content
-            break
-          case 'tool_call':
-            status.value = 'running'
-            assistantMsg.toolCalls.push(reactive({
-              name: event.name,
-              code: event.code,
-              result: null,
-              expanded: false,
-            }))
-            break
-          case 'tool_result': {
-            status.value = 'thinking'
-            const lastCall = assistantMsg.toolCalls[assistantMsg.toolCalls.length - 1]
-            if (lastCall) lastCall.result = event.result
-            break
-          }
-          case 'phase':
-            status.value = event.name // 'verifying' | 'reporting'
-            break
-          case 'output_ready':
-            assistantMsg.outputPath = event.output_path
-            break
-          case 'done':
-            status.value = null
-            assistantMsg.outputPath = event.output_path || assistantMsg.outputPath
-            streaming.value = false
-            break
-          case 'error':
-            status.value = null
-            assistantMsg.error = event.message
-            streaming.value = false
-            break
-          case 'stream_end':
-            status.value = null
-            streaming.value = false
-            break
-        }
-      },
+      (event) => _handleEvent(assistantMsg, event, conversationId),
       imageIds,
+    )
+  }
+
+  function retryFromReject(conversationId, reasonType, reasonText) {
+    const assistantMsg = reactive({
+      id: Date.now(),
+      role: 'assistant',
+      content: '',
+      toolCalls: [],
+      outputPath: null,
+      error: null,
+      diff: null,
+      createSummary: null,
+      conversationId: null,
+    })
+    messages.value.push(assistantMsg)
+
+    streaming.value = true
+    status.value = 'thinking'
+
+    controller = rejectDiffStream(
+      conversationId, reasonType, reasonText,
+      (event) => _handleEvent(assistantMsg, event, conversationId),
     )
   }
 
@@ -101,8 +137,11 @@ export function useChat() {
       })),
       outputPath: m.output_path || null,
       error: m.error || null,
+      diff: null,
+      createSummary: null,
+      conversationId: null,
     }))
   }
 
-  return { messages, streaming, status, send, stop, clearMessages, loadFromHistory }
+  return { messages, streaming, status, send, retryFromReject, stop, clearMessages, loadFromHistory }
 }

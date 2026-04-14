@@ -50,6 +50,7 @@ const statusLabel = computed(() => {
     case 'running': return '执行代码中'
     case 'verifying': return '验证结果中'
     case 'reporting': return '生成报告中'
+    case 'reviewing': return ''
     default: return ''
   }
 })
