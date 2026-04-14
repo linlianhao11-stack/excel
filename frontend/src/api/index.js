@@ -48,6 +48,11 @@ export async function getExcelPreview(fileId) {
   return data.sheets
 }
 
+export async function getOutputPreview(filename) {
+  const { data } = await api.get('/files/preview-output', { params: { filename } })
+  return data.sheets
+}
+
 export function chatStream(message, fileIds, conversationId, onEvent, imageIds = []) {
   const controller = new AbortController()
   const token = localStorage.getItem('token')

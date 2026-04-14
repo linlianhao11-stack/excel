@@ -126,15 +126,31 @@
         </div>
       </div>
 
-      <!-- 下载按钮（审批通过后 或 create 模式） -->
-      <button
-        v-if="message.outputPath"
-        @click="handleDownload(message.outputPath)"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors cursor-pointer"
-      >
-        <Download class="w-4 h-4" />
-        下载结果文件
-      </button>
+      <!-- 下载 + 预览按钮（审批通过后 或 create 模式） -->
+      <div v-if="message.outputPath" class="flex items-center gap-2">
+        <button
+          @click="handleDownload(message.outputPath)"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors cursor-pointer"
+        >
+          <Download class="w-4 h-4" />
+          下载结果文件
+        </button>
+        <button
+          @click="showPreview = true"
+          class="inline-flex items-center gap-2 px-4 py-2 border border-[#e5e5e5] hover:bg-[#f4f4f4] text-[#555] text-sm font-medium rounded-xl transition-colors cursor-pointer"
+        >
+          <Eye class="w-4 h-4" />
+          预览
+        </button>
+      </div>
+
+      <!-- 结果文件预览弹窗 -->
+      <ExcelPreview
+        v-if="showPreview && message.outputPath"
+        :outputFilename="message.outputPath.split('/').pop()"
+        :filename="displayFilename(message.outputPath)"
+        @close="showPreview = false"
+      />
 
       <!-- 错误 -->
       <div
@@ -148,12 +164,20 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
-import { Search, Play, Download, ChevronDown } from 'lucide-vue-next'
+import { computed, reactive, ref } from 'vue'
+import { Search, Play, Download, ChevronDown, Eye } from 'lucide-vue-next'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { downloadFile } from '../api'
 import DiffReview from './DiffReview.vue'
+import ExcelPreview from './ExcelPreview.vue'
+
+const showPreview = ref(false)
+
+function displayFilename(path) {
+  const raw = path.split('/').pop()
+  return raw.replace(/^[a-f0-9]{12}_/, '')
+}
 
 const props = defineProps({ message: Object })
 

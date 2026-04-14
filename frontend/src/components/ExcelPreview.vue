@@ -90,10 +90,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { FileSpreadsheet, X } from 'lucide-vue-next'
-import { getExcelPreview } from '../api'
+import { getExcelPreview, getOutputPreview } from '../api'
 
 const props = defineProps({
-  fileId: { type: String, required: true },
+  fileId: { type: String, default: '' },
+  outputFilename: { type: String, default: '' },
   filename: { type: String, required: true },
 })
 defineEmits(['close'])
@@ -108,7 +109,11 @@ const currentSheet = computed(() => sheets.value[activeSheet.value])
 
 onMounted(async () => {
   try {
-    sheets.value = await getExcelPreview(props.fileId)
+    if (props.outputFilename) {
+      sheets.value = await getOutputPreview(props.outputFilename)
+    } else {
+      sheets.value = await getExcelPreview(props.fileId)
+    }
     const names = Object.keys(sheets.value)
     if (names.length) activeSheet.value = names[0]
   } catch (e) {

@@ -63,6 +63,27 @@ async def list_files(user: dict = Depends(get_current_user)):
     return {"files": list(uploaded_files.values())}
 
 
+@router.get("/preview-output")
+async def preview_output_file(filename: str, user: dict = Depends(get_current_user)):
+    """预览 AI 生成的结果文件（前 200 行）"""
+    import re
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', filename):
+        raise HTTPException(400, "非法文件名")
+    file_path = WORK_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(404, "文件不存在")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if f".{ext}" in IMAGE_EXTS:
+        raise HTTPException(400, "图片文件不支持表格预览")
+    try:
+        data = preview_excel(str(file_path), max_rows=200)
+    except Exception as e:
+        raise HTTPException(500, f"预览失败: {str(e)}")
+    return {"sheets": data}
+
+
 @router.get("/{file_id}/preview")
 async def get_file_preview(file_id: str, user: dict = Depends(get_current_user)):
     """返回 Excel 预览数据（前 50 行）"""
