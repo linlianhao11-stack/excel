@@ -52,11 +52,13 @@ def classify_error(stderr: str) -> tuple[str, bool]:
     if "memoryerror" in s or "killed" in s:
         return ("memory", False)
     if "安全检查失败" in stderr:
-        return ("safety", False)
+        return ("safety", True)
     if "filenotfounderror" in s:
         return ("file_not_found", True)
     if "syntaxerror" in s:
         return ("syntax", True)
+    if "modify 模式禁止" in stderr:
+        return ("safety", True)
     return ("code_error", True)
 
 
@@ -72,85 +74,6 @@ class ErrorTracker:
         return error_type, is_retryable, limit_reached
 
 
-def _read_file_code(var_name: str, path: str) -> str:
-    safe_p = path.replace("\\", "\\\\").replace('"', '\\"')
-    if path.lower().endswith(".csv"):
-        return (
-            f'{var_name}_sheets = {{}}\n'
-            f'try:\n'
-            f'    _df = pd.read_csv("{safe_p}")\n'
-            f'    {var_name}_sheets["Sheet1"] = {{"rows": len(_df), "cols": len(_df.columns), '
-            f'"nulls": int(_df.isnull().sum().sum()), "col_nulls": _df.isnull().sum().to_dict(), '
-            f'"sample": _df.head(3).to_string()}}\n'
-            f'except Exception as e:\n'
-            f'    report.append(f"{var_name} 读取失败: {{e}}")\n'
-        )
-    return (
-        f'{var_name}_sheets = {{}}\n'
-        f'try:\n'
-        f'    for _s in pd.ExcelFile("{safe_p}").sheet_names:\n'
-        f'        _df = pd.read_excel("{safe_p}", sheet_name=_s)\n'
-        f'        {var_name}_sheets[_s] = {{"rows": len(_df), "cols": len(_df.columns), '
-        f'"nulls": int(_df.isnull().sum().sum()), "col_nulls": _df.isnull().sum().to_dict(), '
-        f'"sample": _df.head(3).to_string()}}\n'
-        f'except Exception as e:\n'
-        f'    report.append(f"{var_name} 读取失败: {{e}}")\n'
-    )
-
-
-def build_verification_code(file_paths: dict[str, str], output_path: str) -> str:
-    parts = ["import pandas as pd", "", "report = []", ""]
-    parts.append(_read_file_code("output", output_path))
-    for var, path in file_paths.items():
-        parts.append(_read_file_code(var, path))
-
-    # 统计每个 sheet 被几个输入引用
-    parts.append("_sheet_ref_count = {}")
-    for var in file_paths:
-        parts.append(f'for _s in {var}_sheets:')
-        parts.append(f'    _sheet_ref_count[_s] = _sheet_ref_count.get(_s, 0) + 1')
-    parts.append("")
-
-    for var in file_paths:
-        parts.append(f'for _s, _in in {var}_sheets.items():')
-        parts.append(f'    _label = f"[{var}] Sheet [{{_s}}]"')
-        parts.append(f'    if _sheet_ref_count.get(_s, 0) > 1:')
-        parts.append(f'        _label += " (多个输入共享此输出 sheet，以下为近似对比)"')
-        parts.append(f'    report.append(f"\\n{{_label}}:")')
-        parts.append(f'    if _s in output_sheets:')
-        parts.append(f'        _out = output_sheets[_s]')
-        parts.append(f'        report.append(f"  行数: {{_in[\\"rows\\"]}} → {{_out[\\"rows\\"]}}")')
-        parts.append(f'        report.append(f"  列数: {{_in[\\"cols\\"]}} → {{_out[\\"cols\\"]}}")')
-        parts.append(f'        report.append(f"  空值: {{_in[\\"nulls\\"]}} → {{_out[\\"nulls\\"]}}")')
-        parts.append(f'        for _c in _in["col_nulls"]:')
-        parts.append(f'            _before = _in["col_nulls"][_c]')
-        parts.append(f'            _after = _out.get("col_nulls", {{}}).get(_c, "N/A")')
-        parts.append(f'            if _before != _after:')
-        parts.append(f'                report.append(f"    列[{{_c}}] 空值: {{_before}} → {{_after}}")')
-        parts.append(f'        if _out["rows"] < _in["rows"] * 0.5:')
-        parts.append(f'            report.append("  ⚠ 警告: 行数减少超过50%")')
-        parts.append(f'        if _out["nulls"] > _in["nulls"] * 2 and _out["nulls"] - _in["nulls"] > 10:')
-        parts.append(f'            report.append(f"  ⚠ 警告: 空值大幅增加")')
-        parts.append(f'        report.append(f"  输入前3行:")')
-        parts.append(f'        report.append(_in["sample"])')
-        parts.append(f'        report.append(f"  输出前3行:")')
-        parts.append(f'        report.append(_out["sample"])')
-        parts.append(f'    else:')
-        parts.append(f'        report.append(f"  (输出中无此 sheet)")')
-        parts.append("")
-
-    parts.append('_all_input_sheets = set()')
-    for var in file_paths:
-        parts.append(f'_all_input_sheets.update({var}_sheets.keys())')
-    parts.append('for _s in output_sheets:')
-    parts.append('    if _s not in _all_input_sheets:')
-    parts.append('        report.append(f"\\n[新增 sheet] [{_s}]: {output_sheets[_s][\\"rows\\"]}行x{output_sheets[_s][\\"cols\\"]}列")')
-    parts.append('        report.append(output_sheets[_s]["sample"])')
-    parts.append("")
-    parts.append('print("\\n".join(report))')
-    return "\n".join(parts)
-
-
 SYSTEM_PROMPT = """你是一个 Excel 数据处理助手。用户会上传 Excel 文件并描述处理需求。
 
 ## 可用工具
@@ -159,9 +82,18 @@ SYSTEM_PROMPT = """你是一个 Excel 数据处理助手。用户会上传 Excel
    代码中可用变量: INPUT_PATH_1, INPUT_PATH_2, ...
    用 print() 输出你想看的内容
 
-2. **execute** — 执行 Python 代码处理数据并生成结果文件
+2. **modify** — 修改现有 Excel 文件，保留原始格式
+   系统已自动将原文件复制到 OUTPUT_PATH，你只需要用 openpyxl 修改需要改的单元格。
    代码中可用变量: INPUT_PATH_1, INPUT_PATH_2, ..., OUTPUT_PATH
-   必须将结果写入 OUTPUT_PATH（.xlsx 格式）
+   **禁止使用 pandas 写文件**（to_excel/to_csv/ExcelWriter 会被系统拦截）。
+   用 openpyxl 的 load_workbook(OUTPUT_PATH) 打开并修改，最后 wb.save(OUTPUT_PATH)。
+   如果要修改的不是第一个文件，用 source 参数指定（如 "INPUT_PATH_2"）。
+
+3. **create** — 生成全新的 Excel 文件
+   代码中可用变量: INPUT_PATH_1, INPUT_PATH_2, ..., OUTPUT_PATH
+   可以使用 pandas 或 openpyxl，结果写入 OUTPUT_PATH。
+   **仅用于从零生成新文件**（汇总表、合并表、新报表等）。
+   如果你需要读取并修改现有文件的内容，必须用 modify 而不是 create。
 
 可用的库: pandas, numpy, re, datetime, openpyxl, copy, shutil
 禁止使用: os, sys, subprocess 等系统模块
@@ -180,19 +112,14 @@ SYSTEM_PROMPT = """你是一个 Excel 数据处理助手。用户会上传 Excel
 **谨慎修改：**
 - 涉及批量修改、删除行、改公式时，先描述你的方案
 - 只修改需要改的单元格，不要整列覆写
-- 修改现有文件时用 openpyxl（先 shutil.copy2 复制原文件到 OUTPUT_PATH，再修改副本），不要用 pandas 写文件（会丢失格式、合并单元格、公式、样式）
 
 **任务不明确时主动澄清：**
 - 如果用户的需求模糊或有歧义，先问清楚再动手
 
 ## 完成规则
 
-execute 成功后，你的任务就完成了。不要再调用任何工具。
-系统会自动验证结果并把验证信息提供给你，届时请直接用中文输出变更报告，涵盖：
-- 做了哪些修改
-- 具体怎么改的（涉及哪些 sheet、列、行范围）
-- 为什么这么改
-- 可能存在的风险、边界情况、未处理的异常数据"""
+modify 或 create 成功后，你的任务就完成了。不要再调用任何工具。
+系统会自动对比输入输出文件并生成变更报告展示给用户。"""
 
 TOOLS = [
     {
@@ -215,8 +142,30 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "execute",
-            "description": "执行 Python 代码处理数据并生成结果文件到 OUTPUT_PATH",
+            "name": "modify",
+            "description": "修改现有 Excel 文件并保留原始格式。系统已自动复制原文件到 OUTPUT_PATH，用 openpyxl 修改即可。禁止使用 pandas 写文件。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "要执行的 Python 代码（使用 openpyxl）",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "要修改的文件变量名，默认 INPUT_PATH_1",
+                        "default": "INPUT_PATH_1",
+                    },
+                },
+                "required": ["code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create",
+            "description": "生成全新的 Excel 文件到 OUTPUT_PATH。可以使用 pandas 或 openpyxl。仅用于从零生成新文件。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -230,12 +179,6 @@ TOOLS = [
         },
     },
 ]
-
-REPORT_PROMPT = (
-    "execute 已成功，系统已自动对比输入输出文件。请根据以下验证信息和你之前的操作，"
-    "用中文自然语言段落输出变更报告。涵盖：做了什么修改、怎么改的、为什么这么改、"
-    "有什么风险或注意事项。\n\n验证结果：\n{verification}"
-)
 
 INTERRUPTED_PROMPT = (
     "任务被系统中断，原因：{reason}。\n"
@@ -261,19 +204,10 @@ def _build_image_content(images: list[dict]) -> list[dict]:
     return parts
 
 
-async def _generate_report(llm, messages, verification, output_path):
-    report_msg = REPORT_PROMPT.format(verification=verification or "验证跳过")
-    messages.append({"role": "user", "content": report_msg})
-    async for delta in llm.chat_stream(messages, tools=None):
-        if delta.get("content"):
-            yield {"type": "text", "content": delta["content"]}
-    yield {"type": "done", "output_path": output_path}
-
-
 async def _generate_interrupted_summary(llm, messages, reason, output_path):
     output_info = ""
     if output_path:
-        output_info = "\n\n注意：之前有一次 execute 成功生成了文件，该文件可供用户下载，但后续操作可能未完成。"
+        output_info = "\n\n注意：之前有一次操作成功生成了文件，该文件可供用户下载，但后续操作可能未完成。"
     msg = INTERRUPTED_PROMPT.format(reason=reason, output_info=output_info)
     messages.append({"role": "user", "content": msg})
     async for delta in llm.chat_stream(messages, tools=None):
@@ -282,28 +216,65 @@ async def _generate_interrupted_summary(llm, messages, reason, output_path):
     yield {"type": "done", "output_path": output_path}
 
 
-async def run_agent(user_message, files, images=None):
+async def run_agent(
+    user_message: str = None,
+    files: list = None,
+    images: list = None,
+    operation_history: list[str] = None,
+    resume_messages: list[dict] = None,
+):
+    """Agent 主循环。
+
+    正常调用：传 user_message + files
+    驳回重试：传 resume_messages（含完整上下文），跳过初始化
+    """
     llm = get_llm_provider()
+    files = files or []
     images = images or []
-    logger.info("Agent启动 message=%s files=%d images=%d", user_message[:80], len(files), len(images))
 
-    excel_files = [f for f in files if f.get("type") != "image"]
-    file_paths = {}
-    for i, f in enumerate(excel_files, 1):
-        file_paths[f"INPUT_PATH_{i}"] = f["path"]
-
-    context = build_context(files)
-    user_text = f"已上传的文件信息：\n\n{context}\n\n用户需求：{user_message}" if context else user_message
-    if images:
-        user_content = [{"type": "text", "text": user_text}]
-        user_content.extend(_build_image_content(images))
+    if resume_messages:
+        # 驳回重试：直接使用传入的 messages
+        messages = resume_messages
+        # 从 messages 中提取 file_paths（存在 system prompt 中的变量引用）
+        excel_files = [f for f in files if f.get("type") != "image"]
+        file_paths = {}
+        for i, f in enumerate(excel_files, 1):
+            file_paths[f"INPUT_PATH_{i}"] = f["path"]
+        logger.info("Agent重试 messages_len=%d files=%d", len(messages), len(files))
     else:
-        user_content = user_text
+        # 正常启动
+        logger.info("Agent启动 message=%s files=%d images=%d",
+                     (user_message or "")[:80], len(files), len(images))
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
-    ]
+        excel_files = [f for f in files if f.get("type") != "image"]
+        file_paths = {}
+        for i, f in enumerate(excel_files, 1):
+            file_paths[f"INPUT_PATH_{i}"] = f["path"]
+
+        context = build_context(files)
+
+        # 构建 user message，含历史操作摘要
+        parts = []
+        if context:
+            parts.append(f"已上传的文件信息：\n\n{context}")
+        if operation_history:
+            history_text = "历史操作：\n"
+            for i, op in enumerate(operation_history, 1):
+                history_text += f"{i}. {op}\n"
+            parts.append(history_text)
+        parts.append(f"本次需求：{user_message}" if operation_history else f"用户需求：{user_message}")
+        user_text = "\n\n".join(parts)
+
+        if images:
+            user_content = [{"type": "text", "text": user_text}]
+            user_content.extend(_build_image_content(images))
+        else:
+            user_content = user_text
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
 
     guard = LoopGuard()
     errors = ErrorTracker()
@@ -388,34 +359,56 @@ async def run_agent(user_message, files, images=None):
                 result = await execute_query(code, file_paths)
                 tool_result = result["output"] if result["success"] else f"错误: {result['output']}"
                 logger.info("query结果 success=%s output_len=%d", result["success"], len(tool_result))
-            elif name == "execute":
-                result = await execute_code(code, file_paths)
+
+            elif name == "modify":
+                source = args.get("source", "INPUT_PATH_1")
+                source_path = file_paths.get(source)
+                if not source_path:
+                    tool_result = f"错误: 未找到文件 {source}，可用文件: {list(file_paths.keys())}"
+                    messages.append({"role": "tool", "tool_call_id": tc_id, "content": tool_result})
+                    yield {"type": "tool_result", "name": name, "result": tool_result}
+                    continue
+
+                result = await execute_code(
+                    code, file_paths,
+                    mode="modify",
+                    pre_copy_from=source_path,
+                )
                 if result["success"]:
                     output_path = result["output_path"]
-                    tool_result = "执行成功。输出文件已生成。"
+                    tool_result = "修改成功。输出文件已生成。"
                     if result["stdout"]:
                         tool_result += f"\n标准输出: {result['stdout']}"
-                    logger.info("execute成功 output=%s", output_path)
-                    yield {"type": "output_ready", "output_path": output_path}
+                    logger.info("modify成功 output=%s", output_path)
 
                     messages.append({"role": "tool", "tool_call_id": tc_id, "content": tool_result})
                     yield {"type": "tool_result", "name": name, "result": tool_result}
 
+                    # 进入 diff 审查流程
                     yield {"type": "phase", "name": "verifying"}
-                    verification = ""
-                    if file_paths and output_path:
-                        verify_code = build_verification_code(file_paths, output_path)
-                        verify_result = await execute_query(verify_code, {})
-                        verification = verify_result["output"] if verify_result["success"] else f"验证脚本出错: {verify_result['output']}"
-                        logger.info("自动验证完成: %s", verification[:200])
 
-                    yield {"type": "phase", "name": "reporting"}
-                    async for evt in _generate_report(llm, messages, verification, output_path):
-                        yield evt
+                    # compute_diff 将在阶段 2 实现，此处先占位返回空 diff
+                    from .excel import compute_diff
+                    try:
+                        diff_data = compute_diff(source_path, output_path)
+                    except Exception as e:
+                        logger.error("diff计算失败: %s", e, exc_info=True)
+                        diff_data = {"summary": {}, "integrity": {}, "changes": [], "error": str(e)}
+
+                    yield {
+                        "type": "diff_review",
+                        "diff": diff_data,
+                        "output_path": output_path,
+                        "input_path": source_path,
+                        "messages": messages,
+                        "file_paths": file_paths,
+                        "files": files,
+                    }
+                    yield {"type": "done", "output_path": None}
                     return
                 else:
                     error_type, is_retryable, limit_reached = errors.record(result["stderr"])
-                    logger.warning("execute失败 type=%s retryable=%s limit=%s", error_type, is_retryable, limit_reached)
+                    logger.warning("modify失败 type=%s retryable=%s limit=%s", error_type, is_retryable, limit_reached)
                     if not is_retryable:
                         yield {"type": "error", "message": f"不可恢复的错误 ({error_type}): {result['stderr'][:300]}"}
                         yield {"type": "done", "output_path": None}
@@ -425,6 +418,45 @@ async def run_agent(user_message, files, images=None):
                         yield {"type": "done", "output_path": None}
                         return
                     tool_result = f"执行失败 ({error_type}): {result['stderr']}"
+
+            elif name == "create":
+                result = await execute_code(code, file_paths, mode="create")
+                if result["success"]:
+                    output_path = result["output_path"]
+                    tool_result = "创建成功。输出文件已生成。"
+                    if result["stdout"]:
+                        tool_result += f"\n标准输出: {result['stdout']}"
+                    logger.info("create成功 output=%s", output_path)
+
+                    messages.append({"role": "tool", "tool_call_id": tc_id, "content": tool_result})
+                    yield {"type": "tool_result", "name": name, "result": tool_result}
+
+                    # create 流程：生成摘要 + 直接可下载
+                    yield {"type": "phase", "name": "verifying"}
+                    from .excel import compute_create_summary
+                    try:
+                        summary_data = compute_create_summary(output_path)
+                    except Exception as e:
+                        logger.error("摘要生成失败: %s", e, exc_info=True)
+                        summary_data = {"error": str(e)}
+
+                    yield {"type": "create_summary", "summary": summary_data}
+                    yield {"type": "output_ready", "output_path": output_path}
+                    yield {"type": "done", "output_path": output_path}
+                    return
+                else:
+                    error_type, is_retryable, limit_reached = errors.record(result["stderr"])
+                    logger.warning("create失败 type=%s retryable=%s limit=%s", error_type, is_retryable, limit_reached)
+                    if not is_retryable:
+                        yield {"type": "error", "message": f"不可恢复的错误 ({error_type}): {result['stderr'][:300]}"}
+                        yield {"type": "done", "output_path": None}
+                        return
+                    if limit_reached:
+                        yield {"type": "error", "message": f"{error_type} 错误已重试 {errors.max_per_type} 次仍失败: {result['stderr'][:300]}"}
+                        yield {"type": "done", "output_path": None}
+                        return
+                    tool_result = f"执行失败 ({error_type}): {result['stderr']}"
+
             else:
                 tool_result = f"未知工具: {name}"
 
