@@ -35,7 +35,7 @@ const emit = defineEmits(['newChat', 'previewFile'])
 
 const { messages, status, send } = useChat()
 const { files } = useFiles()
-const { currentConvId, create } = useConversations()
+const { currentConvId, create, load: reloadConversations } = useConversations()
 
 const hasMessages = computed(() => messages.value.length > 0)
 
@@ -44,6 +44,7 @@ async function handleSend(text, imageIds = []) {
   let convId = currentConvId.value
   if (!convId) {
     convId = await create()
+    reloadConversations()
   }
   send(text, fileIds, convId, imageIds)
 }

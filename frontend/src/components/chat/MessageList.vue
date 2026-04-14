@@ -1,6 +1,6 @@
 <template>
   <div ref="scrollContainer" class="flex-1 overflow-y-auto" @scroll="handleScroll">
-    <div class="max-w-3xl mx-auto py-8 px-4">
+    <div class="max-w-4xl mx-auto py-8 px-4">
       <MessageBubble
         v-for="msg in messages"
         :key="msg.id"

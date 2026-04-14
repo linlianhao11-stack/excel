@@ -1,6 +1,6 @@
 <template>
   <div :class="centered ? 'w-full px-4 py-3' : 'px-4 py-3 border-t'" :style="centered ? {} : { borderColor: 'var(--border)' }">
-    <div :class="centered ? 'w-full max-w-[540px] mx-auto' : 'max-w-3xl mx-auto'">
+    <div :class="centered ? 'w-full max-w-[540px] mx-auto' : 'max-w-4xl mx-auto'">
       <div
         class="rounded-2xl transition-all"
         :style="{
@@ -8,8 +8,8 @@
           border: '1px solid ' + (focused ? 'var(--primary)' : 'var(--input-border)'),
           boxShadow: focused ? '0 0 0 3px var(--primary-ring)' : 'none'
         }"
-        @dragover.prevent="dragOver = true"
-        @dragleave="dragOver = false"
+        @dragenter.prevent="dragCounter++"
+        @dragleave="dragCounter--"
         @drop.prevent="handleDrop"
       >
         <!-- 附件预览层 -->
@@ -98,7 +98,8 @@ const { files, uploading, upload, remove: removeFile } = useFiles()
 const { streaming } = useChat()
 
 const text = ref('')
-const dragOver = ref(false)
+const dragCounter = ref(0)
+const dragOver = computed(() => dragCounter.value > 0)
 const focused = ref(false)
 const textareaRef = ref(null)
 const pendingImages = ref([])
@@ -172,7 +173,7 @@ async function handlePaste(e) {
 }
 
 async function handleDrop(e) {
-  dragOver.value = false
+  dragCounter.value = 0
   const allFiles = Array.from(e.dataTransfer.files)
   const excelFiles = allFiles.filter(f => EXCEL_EXTS.some(ext => f.name.toLowerCase().endsWith(ext)))
   const imageFiles = allFiles.filter(f => isImage(f.name))

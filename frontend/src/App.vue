@@ -46,7 +46,7 @@ import ExcelPreview from './components/ExcelPreview.vue'
 const { isLoggedIn } = useAuth()
 const { clear: clearFiles } = useFiles()
 const { clearMessages, loadFromHistory } = useChat()
-const { create, select, loadMessages } = useConversations()
+const { create, select, loadMessages, load: reloadConversations } = useConversations()
 
 const currentView = ref('chat')
 const previewFile = ref(null)
@@ -61,6 +61,7 @@ async function handleNewChat() {
   clearFiles()
   const convId = await create()
   select(convId)
+  reloadConversations()
 }
 
 async function handleSelectConversation(convId) {
