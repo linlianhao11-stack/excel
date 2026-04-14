@@ -167,3 +167,72 @@ export async function changePassword(oldPassword, newPassword) {
   const { data } = await api.post('/auth/change-password', { old_password: oldPassword, new_password: newPassword })
   return data
 }
+
+// Diff Review API
+export async function approveDiff(conversationId) {
+  const { data } = await api.post('/diff/approve', { conversation_id: conversationId })
+  return data
+}
+
+export function rejectDiffStream(conversationId, reasonType, reasonText, onEvent) {
+  const controller = new AbortController()
+  const token = localStorage.getItem('token')
+
+  fetch('/api/diff/reject', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      reason_type: reasonType,
+      reason_text: reasonText,
+    }),
+    signal: controller.signal,
+  }).then(async (response) => {
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.reload()
+      return
+    }
+    // 非 SSE 响应（如超限错误），直接解析 JSON
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const data = await response.json()
+      if (data.error) {
+        onEvent({ type: 'error', message: data.error })
+      }
+      onEvent({ type: 'stream_end' })
+      return
+    }
+    // SSE 流
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') {
+            onEvent({ type: 'stream_end' })
+            return
+          }
+          try { onEvent(JSON.parse(data)) } catch { /* ignore */ }
+        }
+      }
+    }
+  }).catch(err => {
+    if (err.name !== 'AbortError') {
+      onEvent({ type: 'error', message: err.message })
+    }
+  })
+
+  return controller
+}

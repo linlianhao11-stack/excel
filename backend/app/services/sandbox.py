@@ -33,12 +33,20 @@ BLOCKED_BUILTINS = {
 
 BLOCKED_ATTRS = {
     "__import__", "system", "popen", "__subclasses__",
-    "__bases__", "__class__", "__mro__",
+    "__bases__", "__class__", "__mro__", "__getattribute__",
+}
+
+# modify 模式下禁止的写文件方法（保护原始格式）
+BLOCKED_WRITE_ATTRS = {
+    "to_excel", "to_csv", "to_parquet", "ExcelWriter",
 }
 
 
-def check_code_safety(code: str) -> str | None:
-    """AST 检查代码安全性，返回 None 表示安全，否则返回原因"""
+def check_code_safety(code: str, mode: str | None = None) -> str | None:
+    """AST 检查代码安全性，返回 None 表示安全，否则返回原因。
+
+    mode: None=query, "modify"=修改现有文件(禁止pandas写), "create"=生成新文件
+    """
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
@@ -63,16 +71,23 @@ def check_code_safety(code: str) -> str | None:
             func = node.func
             if isinstance(func, ast.Name) and func.id in BLOCKED_BUILTINS:
                 return f"禁止调用: {func.id}()"
-            if isinstance(func, ast.Attribute) and func.attr in BLOCKED_ATTRS:
-                return f"禁止调用: .{func.attr}()"
+            if isinstance(func, ast.Attribute):
+                if func.attr in BLOCKED_ATTRS:
+                    return f"禁止调用: .{func.attr}()"
+                # modify 模式下禁止 pandas 写文件方法
+                if mode == "modify" and func.attr in BLOCKED_WRITE_ATTRS:
+                    return f"modify 模式禁止使用 .{func.attr}()，请用 openpyxl 修改文件"
 
         # 检查对 __builtins__ 的访问
         elif isinstance(node, ast.Attribute):
             if node.attr in ("__builtins__", "__builtin__"):
                 return "禁止访问 __builtins__"
+            # modify 模式下也检查属性访问（如 pd.ExcelWriter）
+            if mode == "modify" and node.attr in BLOCKED_WRITE_ATTRS:
+                return f"modify 模式禁止使用 {node.attr}，请用 openpyxl 修改文件"
 
         # 检查 open() 调用 — 只允许 pandas 读写
-        elif isinstance(node, ast.Call):
+        if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id == "open":
                 return "禁止直接使用 open()，请用 pandas 读写文件"
 
@@ -142,9 +157,18 @@ def _build_header(file_paths: dict[str, str], output_path: str | None = None) ->
     return header
 
 
-def _execute_code_sync(code: str, file_paths: dict[str, str]) -> dict:
-    """同步执行处理代码并生成结果文件"""
-    safety = check_code_safety(code)
+def _execute_code_sync(
+    code: str,
+    file_paths: dict[str, str],
+    mode: str = "create",
+    pre_copy_from: str | None = None,
+) -> dict:
+    """同步执行处理代码并生成结果文件。
+
+    mode: "modify"=修改现有文件(禁止pandas写), "create"=生成新文件
+    pre_copy_from: 非 None 时先复制此文件到 OUTPUT_PATH（modify 模式用）
+    """
+    safety = check_code_safety(code, mode=mode)
     if safety:
         return {
             "success": False, "stdout": "",
@@ -153,9 +177,37 @@ def _execute_code_sync(code: str, file_paths: dict[str, str]) -> dict:
 
     output_id = uuid.uuid4().hex[:8]
     output_path = str(WORK_DIR / f"result_{output_id}.xlsx")
-    full_code = _build_header(file_paths, output_path) + code
+
+    # modify 模式：预复制原文件到 OUTPUT_PATH，保留格式
+    if pre_copy_from and Path(pre_copy_from).exists():
+        import shutil as _shutil
+        _shutil.copy2(pre_copy_from, output_path)
+        logger.info("预复制文件 %s → %s", pre_copy_from, output_path)
+
+    # modify 模式：INPUT 路径指向只读临时副本，防止 LLM 覆写原始文件
+    effective_paths = file_paths
+    tmp_input_copies = []
+    if mode == "modify":
+        import shutil as _shutil
+        effective_paths = {}
+        for var_name, var_path in file_paths.items():
+            tmp_copy = str(WORK_DIR / f"_readonly_{uuid.uuid4().hex[:8]}_{Path(var_path).name}")
+            _shutil.copy2(var_path, tmp_copy)
+            os.chmod(tmp_copy, 0o444)  # 只读
+            effective_paths[var_name] = tmp_copy
+            tmp_input_copies.append(tmp_copy)
+
+    full_code = _build_header(effective_paths, output_path) + code
 
     result = _run_script(full_code)
+
+    # 清理临时只读副本
+    for tmp in tmp_input_copies:
+        try:
+            os.chmod(tmp, 0o644)
+            Path(tmp).unlink(missing_ok=True)
+        except OSError:
+            pass
     success = result["returncode"] == 0
     return {
         "success": success,
@@ -177,9 +229,16 @@ def _execute_query_sync(code: str, file_paths: dict[str, str]) -> dict:
     return {"success": result["returncode"] == 0, "output": output}
 
 
-async def execute_code(code: str, file_paths: dict[str, str]) -> dict:
+async def execute_code(
+    code: str,
+    file_paths: dict[str, str],
+    mode: str = "create",
+    pre_copy_from: str | None = None,
+) -> dict:
     """异步执行处理代码（不阻塞事件循环）"""
-    return await asyncio.to_thread(_execute_code_sync, code, file_paths)
+    return await asyncio.to_thread(
+        _execute_code_sync, code, file_paths, mode, pre_copy_from
+    )
 
 
 async def execute_query(code: str, file_paths: dict[str, str]) -> dict:

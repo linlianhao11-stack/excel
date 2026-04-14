@@ -9,7 +9,7 @@
 
       <!-- 状态指示器 -->
       <div
-        v-if="status"
+        v-if="status && status !== 'reviewing'"
         class="flex items-center gap-2 text-[13px] mb-6 pl-0.5"
         style="color: var(--text-placeholder)"
       >
@@ -50,6 +50,7 @@ const statusLabel = computed(() => {
     case 'running': return '执行代码中'
     case 'verifying': return '验证结果中'
     case 'reporting': return '生成报告中'
+    case 'reviewing': return ''
     default: return ''
   }
 })
