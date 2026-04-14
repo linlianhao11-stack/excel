@@ -51,6 +51,11 @@ def save_upload(filename: str, content: bytes) -> dict:
     }
 
 
+def _df_to_csv_str(df: pd.DataFrame) -> str:
+    """将 DataFrame 转为紧凑 CSV 字符串（列名只出现一次，比 to_dict 节省约 3 倍 token）"""
+    return df.fillna("").astype(str).to_csv(index=False)
+
+
 def profile_excel(path: str) -> dict[str, Any]:
     """分析 Excel/CSV 结构：sheet名、列名、类型、样本、行数"""
     if path.endswith(".csv"):
@@ -60,7 +65,7 @@ def profile_excel(path: str) -> dict[str, Any]:
         result["Sheet1"] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
-            "sample": sample_df.fillna("").astype(str).to_dict("records"),
+            "sample": _df_to_csv_str(sample_df),
             "row_count": len(df),
             "col_count": len(df.columns),
         }
@@ -74,7 +79,7 @@ def profile_excel(path: str) -> dict[str, Any]:
         result[sheet] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
-            "sample": sample_df.fillna("").astype(str).to_dict("records"),
+            "sample": _df_to_csv_str(sample_df),
             "row_count": len(df),
             "col_count": len(df.columns),
         }
@@ -375,7 +380,7 @@ def compute_create_summary(output_path: str) -> dict:
                         "row_count": len(df),
                         "col_count": len(df.columns),
                         "columns": df.columns.tolist(),
-                        "preview": df.head(5).fillna("").astype(str).to_dict("records"),
+                        "preview": df.head(5).fillna("").astype(str).values.tolist(),
                     }
                 }
             }
@@ -388,7 +393,7 @@ def compute_create_summary(output_path: str) -> dict:
                 "row_count": len(df),
                 "col_count": len(df.columns),
                 "columns": df.columns.tolist(),
-                "preview": df.head(5).fillna("").astype(str).to_dict("records"),
+                "preview": df.head(5).fillna("").astype(str).values.tolist(),
             }
         return {"sheets": sheets}
     except Exception as e:
