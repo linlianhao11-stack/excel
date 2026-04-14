@@ -32,7 +32,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuth } from './composables/useAuth'
 import { useFiles } from './composables/useFiles'
 import { useChat } from './composables/useChat'
@@ -50,6 +50,26 @@ const { create, select, loadMessages, load: reloadConversations } = useConversat
 
 const currentView = ref('chat')
 const previewFile = ref(null)
+
+// 刷新时恢复上次的对话
+onMounted(async () => {
+  if (isLoggedIn.value) {
+    await reloadConversations()
+    const { currentConvId } = useConversations()
+    if (currentConvId.value) {
+      try {
+        const data = await loadMessages(currentConvId.value)
+        if (data.messages) {
+          loadFromHistory(data.messages)
+        }
+      } catch {
+        // 对话已不存在，清理
+        select(null)
+        clearMessages()
+      }
+    }
+  }
+})
 
 function openPreview(file) {
   previewFile.value = file

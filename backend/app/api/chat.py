@@ -55,6 +55,19 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
         if iid in uploaded_files and uploaded_files[iid].get("type") == "image":
             images.append(uploaded_files[iid])
 
+    # 没有文件时直接提示用户
+    if not files and not images:
+        async def no_file_stream():
+            msg = "请先上传 Excel 文件，我才能帮你处理数据。"
+            yield f"data: {json.dumps({'type': 'text', 'content': msg}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'output_path': None})}\n\n"
+            if conv_id:
+                save_message(conv_id, "user", content=req.message)
+                update_conversation_title(conv_id, req.message[:30])
+                save_message(conv_id, "assistant", content=msg)
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(no_file_stream(), media_type="text/event-stream")
+
     operation_history = state.get("operation_history", [])
 
     logger.info(

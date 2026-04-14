@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { listConversations, createConversation, deleteConversation, getConversationMessages } from '../api'
 
 const conversations = ref([])
-const currentConvId = ref(null)
+const currentConvId = ref(localStorage.getItem('currentConvId') || null)
 const loading = ref(false)
 
 export function useConversations() {
@@ -29,6 +29,7 @@ export function useConversations() {
     conversations.value = conversations.value.filter(c => c.id !== convId)
     if (currentConvId.value === convId) {
       currentConvId.value = null
+      localStorage.removeItem('currentConvId')
     }
   }
 
@@ -38,6 +39,11 @@ export function useConversations() {
 
   function select(convId) {
     currentConvId.value = convId
+    if (convId) {
+      localStorage.setItem('currentConvId', convId)
+    } else {
+      localStorage.removeItem('currentConvId')
+    }
   }
 
   return { conversations, currentConvId, loading, load, create, remove, loadMessages, select }
