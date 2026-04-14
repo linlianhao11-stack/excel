@@ -1,6 +1,6 @@
 <template>
-  <div :class="centered ? 'px-4 py-3' : 'px-4 py-3 border-t'" :style="centered ? {} : { borderColor: 'var(--border)' }">
-    <div :class="centered ? 'max-w-[560px] mx-auto' : 'max-w-3xl mx-auto'">
+  <div :class="centered ? 'w-full px-4 py-3' : 'px-4 py-3 border-t'" :style="centered ? {} : { borderColor: 'var(--border)' }">
+    <div :class="centered ? 'w-full max-w-[540px] mx-auto' : 'max-w-3xl mx-auto'">
       <div
         class="rounded-2xl transition-all"
         :style="{
