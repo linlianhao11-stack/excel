@@ -104,14 +104,18 @@ async def reject_diff(req: RejectRequest, user: dict = Depends(get_current_user)
 
     # 拼接驳回反馈
     reason_label = REASON_LABELS.get(req.reason_type, "")
-    reason_detail = req.reason_text or reason_label
+    reason_detail = req.reason_text or reason_label or "用户对结果不满意"
     feedback = f"用户驳回了上次的修改。原因：{reason_detail}\n请根据反馈重新修改。"
     messages.append({"role": "user", "content": feedback})
 
-    # 更新重试次数
-    pending["retry_count"] = retry_count + 1
+    # 保存重试次数和 user_message 供后续使用
+    saved_retry_count = retry_count + 1
+    saved_user_message = pending.get("user_message", "")
 
-    logger.info("Diff驳回 conv=%s retry=%d reason=%s", conv_id, retry_count + 1, reason_detail[:50])
+    # 清除旧的 pending_diffs，防止用户在重试期间 approve 旧结果
+    pending_diffs.pop(conv_id, None)
+
+    logger.info("Diff驳回 conv=%s retry=%d reason=%s", conv_id, saved_retry_count, reason_detail[:50])
 
     async def event_stream():
         try:
@@ -125,8 +129,8 @@ async def reject_diff(req: RejectRequest, user: dict = Depends(get_current_user)
                         "input_path": event["input_path"],
                         "file_paths": event["file_paths"],
                         "files": event.get("files", files),
-                        "user_message": pending.get("user_message", ""),
-                        "retry_count": pending["retry_count"],
+                        "user_message": saved_user_message,
+                        "retry_count": saved_retry_count,
                     }
                     # 推给前端的事件不含 messages（太大）
                     frontend_event = {

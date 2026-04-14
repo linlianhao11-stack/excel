@@ -9,7 +9,7 @@
 
       <!-- 状态指示器 -->
       <div
-        v-if="status"
+        v-if="status && status !== 'reviewing'"
         class="flex items-center gap-2 text-[13px] mb-6 pl-0.5"
         style="color: var(--text-placeholder)"
       >

@@ -184,9 +184,30 @@ def _execute_code_sync(
         _shutil.copy2(pre_copy_from, output_path)
         logger.info("预复制文件 %s → %s", pre_copy_from, output_path)
 
-    full_code = _build_header(file_paths, output_path) + code
+    # modify 模式：INPUT 路径指向只读临时副本，防止 LLM 覆写原始文件
+    effective_paths = file_paths
+    tmp_input_copies = []
+    if mode == "modify":
+        import shutil as _shutil
+        effective_paths = {}
+        for var_name, var_path in file_paths.items():
+            tmp_copy = str(WORK_DIR / f"_readonly_{uuid.uuid4().hex[:8]}_{Path(var_path).name}")
+            _shutil.copy2(var_path, tmp_copy)
+            os.chmod(tmp_copy, 0o444)  # 只读
+            effective_paths[var_name] = tmp_copy
+            tmp_input_copies.append(tmp_copy)
+
+    full_code = _build_header(effective_paths, output_path) + code
 
     result = _run_script(full_code)
+
+    # 清理临时只读副本
+    for tmp in tmp_input_copies:
+        try:
+            os.chmod(tmp, 0o644)
+            Path(tmp).unlink(missing_ok=True)
+        except OSError:
+            pass
     success = result["returncode"] == 0
     return {
         "success": success,

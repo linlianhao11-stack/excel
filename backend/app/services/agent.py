@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 
 from .llm import get_llm_provider
 from .sandbox import execute_code, execute_query
-from .excel import build_context
+from .excel import build_context, compute_diff, compute_create_summary
 
 logger = logging.getLogger("excel-agent.agent")
 
@@ -386,9 +386,6 @@ async def run_agent(
 
                     # 进入 diff 审查流程
                     yield {"type": "phase", "name": "verifying"}
-
-                    # compute_diff 将在阶段 2 实现，此处先占位返回空 diff
-                    from .excel import compute_diff
                     try:
                         diff_data = compute_diff(source_path, output_path)
                     except Exception as e:
@@ -433,7 +430,6 @@ async def run_agent(
 
                     # create 流程：生成摘要 + 直接可下载
                     yield {"type": "phase", "name": "verifying"}
-                    from .excel import compute_create_summary
                     try:
                         summary_data = compute_create_summary(output_path)
                     except Exception as e:

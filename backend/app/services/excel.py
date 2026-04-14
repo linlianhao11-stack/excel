@@ -109,12 +109,71 @@ def preview_excel(path: str, max_rows: int = 50) -> dict[str, Any]:
     return result
 
 
+def _compute_diff_csv(input_path: str, output_path: str) -> dict:
+    """CSV 文件的 diff 计算（用 pandas）"""
+    df_in = pd.read_csv(input_path) if input_path.endswith(".csv") else pd.read_excel(input_path)
+    df_out = pd.read_csv(output_path) if output_path.endswith(".csv") else pd.read_excel(output_path)
+
+    changes = []
+    summary = {"modified": 0, "added": 0, "deleted": 0, "unchanged": 0}
+    integrity = {"unchanged_rows_ok": True, "type_changes": [], "sum_checks": []}
+
+    headers = df_in.columns.tolist()
+    first_col = headers[0] if headers else "列1"
+
+    min_rows = min(len(df_in), len(df_out))
+    for i in range(min_rows):
+        row_modified = False
+        for col in headers:
+            if col not in df_out.columns:
+                continue
+            old_val = df_in.iloc[i][col]
+            new_val = df_out.iloc[i][col]
+            if str(old_val if pd.notna(old_val) else "") != str(new_val if pd.notna(new_val) else ""):
+                row_modified = True
+                label = str(df_in.iloc[i][first_col]) if pd.notna(df_in.iloc[i][first_col]) else f"行{i+2}"
+                changes.append({
+                    "type": "modified", "row": i + 2, "sheet": "Sheet1",
+                    "col_name": col, "row_label": f"「{label}」(第{i+2}行)",
+                    "old": str(old_val if pd.notna(old_val) else ""),
+                    "new": str(new_val if pd.notna(new_val) else ""),
+                })
+                summary["modified"] += 1
+        if not row_modified:
+            summary["unchanged"] += 1
+
+    for i in range(min_rows, len(df_out)):
+        row_data = {col: str(df_out.iloc[i][col] if pd.notna(df_out.iloc[i][col]) else "") for col in df_out.columns}
+        changes.append({"type": "added", "row": i + 2, "sheet": "Sheet1", "data": row_data})
+        summary["added"] += 1
+
+    for i in range(min_rows, len(df_in)):
+        row_data = {col: str(df_in.iloc[i][col] if pd.notna(df_in.iloc[i][col]) else "") for col in headers}
+        label = str(df_in.iloc[i][first_col]) if pd.notna(df_in.iloc[i][first_col]) else f"行{i+2}"
+        changes.append({"type": "deleted", "row": i + 2, "sheet": "Sheet1", "row_label": f"「{label}」(第{i+2}行)", "data": row_data})
+        summary["deleted"] += 1
+
+    # 数值列 sum
+    for col in df_in.select_dtypes(include=["number"]).columns:
+        if col in df_out.columns:
+            before, after = float(df_in[col].sum()), float(df_out[col].sum())
+            if abs(before - after) > 0.001:
+                integrity["sum_checks"].append({"column": col, "before": round(before, 2), "after": round(after, 2), "diff": round(after - before, 2)})
+
+    truncated = len(changes) > 50
+    return {"summary": summary, "integrity": integrity, "changes": changes[:50], "truncated": truncated, "total_changes": len(changes)}
+
+
 def compute_diff(input_path: str, output_path: str) -> dict:
     """逐单元格对比输入输出文件，返回结构化 diff。
 
     使用 openpyxl 读取以正确处理合并单元格和公式。
-    行对齐使用第一列作为匹配键。
+    CSV 文件退回 pandas 对比。行对齐使用第一列作为匹配键。
     """
+    # CSV 文件用 pandas 对比
+    if input_path.lower().endswith(".csv") or output_path.lower().endswith(".csv"):
+        return _compute_diff_csv(input_path, output_path)
+
     wb_in = load_workbook(input_path, data_only=True)
     wb_out = load_workbook(output_path, data_only=True)
 
