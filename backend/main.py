@@ -47,6 +47,7 @@ from app.api.download import router as download_router
 from app.api.auth import router as auth_router
 from app.api.conversations import router as conversations_router
 from app.api.settings import router as settings_router
+from app.api.diff import router as diff_router
 
 app.include_router(auth_router)
 app.include_router(files_router)
@@ -54,6 +55,7 @@ app.include_router(chat_router)
 app.include_router(download_router)
 app.include_router(conversations_router)
 app.include_router(settings_router)
+app.include_router(diff_router)
 
 
 @app.on_event("startup")
