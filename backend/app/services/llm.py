@@ -120,6 +120,10 @@ class OpenAICompatibleProvider(LLMProvider):
                         try:
                             chunk = json.loads(data)
                             delta = chunk["choices"][0]["delta"]
+                            # 部分模型（如 qwen3.6-plus）先输出 reasoning_content（思考），
+                            # 再输出 content（回复）。跳过 reasoning 阶段，只传递 content。
+                            if delta.get("reasoning_content") and not delta.get("content"):
+                                continue
                             yield delta
                         except (json.JSONDecodeError, KeyError, IndexError):
                             if data.strip():

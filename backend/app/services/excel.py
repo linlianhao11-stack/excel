@@ -50,7 +50,7 @@ def profile_excel(path: str) -> dict[str, Any]:
     if path.endswith(".csv"):
         df = pd.read_csv(path)
         result = {}
-        sample_df = df.head(5)
+        sample_df = df if len(df) <= 200 else df.head(5)
         result["Sheet1"] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
@@ -64,7 +64,7 @@ def profile_excel(path: str) -> dict[str, Any]:
     result = {}
     for sheet in xl.sheet_names:
         df = pd.read_excel(path, sheet_name=sheet)
-        sample_df = df.head(5)
+        sample_df = df if len(df) <= 200 else df.head(5)
         result[sheet] = {
             "columns": df.columns.tolist(),
             "dtypes": {c: str(df[c].dtype) for c in df.columns},
