@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["download"])
 
 
 @router.get("/download")
-async def download_file(filename: str, token: str = ""):
+async def download_file(filename: str, token: str = "", display_name: str = ""):
     # 支持 query 参数传 token（浏览器直接下载场景）
     if not token:
         raise HTTPException(401, "未登录")
@@ -46,8 +46,11 @@ async def download_file(filename: str, token: str = ""):
     if not file_path.exists():
         raise HTTPException(404, "文件不存在")
 
+    # 下载时的显示名优先用 display_name，fallback 到原 filename
+    download_name = display_name or filename
+
     return FileResponse(
         path=str(file_path),
-        filename=filename,
+        filename=download_name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
