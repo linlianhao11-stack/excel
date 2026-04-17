@@ -49,7 +49,7 @@ async def get_messages(conv_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(404, "对话不存在")
 
     rows = conn.execute(
-        "SELECT id, role, content, tool_calls, output_path, error, created_at "
+        "SELECT id, role, content, tool_calls, output_path, output_display_name, error, created_at "
         "FROM messages WHERE conversation_id = ? ORDER BY created_at",
         (conv_id,),
     ).fetchall()
@@ -101,18 +101,20 @@ def save_message(
     content: str | None = None,
     tool_calls: list | None = None,
     output_path: str | None = None,
+    output_display_name: str | None = None,
     error: str | None = None,
 ) -> None:
     conn = get_db()
     conn.execute(
-        "INSERT INTO messages (conversation_id, role, content, tool_calls, output_path, error) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO messages (conversation_id, role, content, tool_calls, output_path, output_display_name, error) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             conv_id,
             role,
             content,
             json.dumps(tool_calls, ensure_ascii=False) if tool_calls else None,
             output_path,
+            output_display_name,
             error,
         ),
     )
@@ -152,17 +154,19 @@ def save_conversation_files(conv_id: str, files: list[dict]) -> None:
     conn.close()
 
 
-def update_last_assistant_output(conv_id: str, output_path: str) -> None:
+def update_last_assistant_output(
+    conv_id: str, output_path: str, output_display_name: str | None = None
+) -> None:
     """审批通过后，将 output_path 写回最近一条 assistant 消息"""
     conn = get_db()
     conn.execute(
-        """UPDATE messages SET output_path = ?
+        """UPDATE messages SET output_path = ?, output_display_name = ?
            WHERE id = (
                SELECT id FROM messages
                WHERE conversation_id = ? AND role = 'assistant'
                ORDER BY id DESC LIMIT 1
            )""",
-        (output_path, conv_id),
+        (output_path, output_display_name, conv_id),
     )
     conn.commit()
     conn.close()
