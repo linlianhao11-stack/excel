@@ -100,6 +100,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
             ):
                 # 拦截 diff_review 事件：存 messages 到 pending_diffs
                 if event.get("type") == "diff_review":
+                    output_path = event.get("output_path") or output_path
                     if conv_id:
                         pending_diffs[conv_id] = {
                             "messages": event["messages"],

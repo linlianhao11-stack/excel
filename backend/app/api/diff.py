@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from ..services.agent import run_agent
 from ..services.excel import generate_operation_summary, profile_excel
 from .auth import get_current_user
+from .conversations import update_last_assistant_output
 
 logger = logging.getLogger("excel-agent.diff")
 
@@ -76,6 +77,9 @@ async def approve_diff(req: ApproveRequest, user: dict = Depends(get_current_use
         "type": "excel",
         "profile": new_profile,
     }
+
+    # 将 output_path 写回数据库消息
+    update_last_assistant_output(conv_id, output_path)
 
     logger.info("Diff审批通过 conv=%s output=%s history_len=%d",
                 conv_id, output_path, len(state["operation_history"]))

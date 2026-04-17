@@ -127,7 +127,7 @@
       </div>
 
       <!-- 下载 + 预览按钮（审批通过后 或 create 模式） -->
-      <div v-if="message.outputPath" class="flex items-center gap-2">
+      <div v-if="message.outputPath && !message.diff" class="flex items-center gap-2">
         <button
           @click="handleDownload(message.outputPath)"
           class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors cursor-pointer"
@@ -183,6 +183,7 @@ const props = defineProps({ message: Object })
 
 function onDiffApproved(outputPath) {
   props.message.outputPath = outputPath
+  props.message.diff = null
 }
 
 // 分组展开状态

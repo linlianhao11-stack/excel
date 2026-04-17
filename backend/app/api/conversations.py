@@ -150,3 +150,19 @@ def save_conversation_files(conv_id: str, files: list[dict]) -> None:
         )
     conn.commit()
     conn.close()
+
+
+def update_last_assistant_output(conv_id: str, output_path: str) -> None:
+    """审批通过后，将 output_path 写回最近一条 assistant 消息"""
+    conn = get_db()
+    conn.execute(
+        """UPDATE messages SET output_path = ?
+           WHERE id = (
+               SELECT id FROM messages
+               WHERE conversation_id = ? AND role = 'assistant'
+               ORDER BY id DESC LIMIT 1
+           )""",
+        (output_path, conv_id),
+    )
+    conn.commit()
+    conn.close()
