@@ -153,6 +153,11 @@ export async function updateSettings(settings) {
   return data
 }
 
+export async function testConnection(provider, apiKey, model, baseUrl) {
+  const { data } = await api.post('/settings/test', { provider, api_key: apiKey, model, base_url: baseUrl })
+  return data
+}
+
 // User management API
 export async function listUsers() {
   const { data } = await api.get('/auth/users')

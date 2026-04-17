@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..database import get_setting, set_setting
-from .auth import require_admin
+from .auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -20,7 +20,7 @@ class UpdateSettingsRequest(BaseModel):
 
 
 @router.get("")
-async def get_settings(admin: dict = Depends(require_admin)):
+async def get_settings(user: dict = Depends(get_current_user)):
     from ..services.llm import PROVIDER_DEFAULTS
 
     provider = get_setting("provider", "deepseek")
@@ -43,7 +43,7 @@ async def get_settings(admin: dict = Depends(require_admin)):
 
 @router.put("")
 async def update_settings(
-    req: UpdateSettingsRequest, admin: dict = Depends(require_admin)
+    req: UpdateSettingsRequest, user: dict = Depends(get_current_user)
 ):
     if req.provider is not None:
         set_setting("provider", req.provider)
@@ -65,3 +65,54 @@ async def update_settings(
     if req.model is not None:
         set_setting("model", req.model)
     return {"ok": True}
+
+
+
+class TestConnectionRequest(BaseModel):
+    provider: str
+    api_key: str
+    model: str
+    base_url: str = ""
+
+
+@router.post("/test")
+async def test_connection(req: TestConnectionRequest, user: dict = Depends(get_current_user)):
+    """测试 LLM 连接是否可用"""
+    from ..services.llm import PROVIDER_DEFAULTS, OpenAICompatibleProvider
+
+    defaults = PROVIDER_DEFAULTS.get(req.provider)
+    if not defaults:
+        return {"ok": False, "message": f"未知服务商: {req.provider}"}
+
+    if not req.api_key:
+        # 如果没传 api_key，用已保存的
+        api_key = get_setting("api_key", "")
+        if not api_key:
+            return {"ok": False, "message": "请先填入 API Key"}
+    else:
+        api_key = req.api_key
+
+    base_url = req.base_url or defaults["base_url"]
+    llm = OpenAICompatibleProvider(api_key=api_key, base_url=base_url, model=req.model)
+
+    try:
+        messages = [{"role": "user", "content": "你好，请回复OK"}]
+        response_text = ""
+        async for delta in llm.chat_stream(messages, tools=None):
+            if delta.get("content"):
+                response_text += delta["content"]
+                if len(response_text) > 20:
+                    break
+        if response_text:
+            return {"ok": True, "message": f"连接成功，模型已响应"}
+        else:
+            return {"ok": False, "message": "模型未返回内容"}
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            return {"ok": False, "message": "API Key 无效或已过期"}
+        if "404" in error_msg:
+            return {"ok": False, "message": f"模型 {req.model} 不存在"}
+        if "timeout" in error_msg.lower():
+            return {"ok": False, "message": "连接超时，请检查网络"}
+        return {"ok": False, "message": f"连接失败: {error_msg[:100]}"}
