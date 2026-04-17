@@ -206,41 +206,112 @@ def _compute_display_name(
     return f"结果_{ts}.xlsx"
 ```
 
-**Step 2**：修改 `agent.py` 中两处生成 output_path 的地方，计算并传递 display_name：
+**Step 2**：修改 `backend/app/services/agent.py`：
 
-找到 modify 分支（大致在 line 375-410）和 create 分支（line 420-450）。传入 `save_message` 调用加 `output_display_name` 参数。
+**关键说明**：`save_message` **不**在 agent.py 调用，而是在 `chat.py` SSE 消费端调用。所以 agent.py 的职责是在 yield event 时带上 `output_display_name`。
 
-**重要**：这里需要你先 Read 整个 `agent.py` 再做 Edit，确保把 display_name 正确传到：
-- `save_message` 调用
-- yield 的 event 字典（供前端即时显示）
-- diff approve 流程的 `update_last_assistant_output`（在 `diff.py`）
+`agent.py:241-254` 有 `excel_files = [f for f in files if f.get("type") != "image"]`，当前只在 init 块内使用；要改成在 `run_agent` 函数顶层定义（或 modify/create 分支内重新计算 `[f for f in files if f.get("type") != "image"]`）。
 
-**典型修改示例**（modify 分支）：
+- **modify 分支**（line 365-407）：在 `output_path = result["output_path"]` 之后：
 
 ```python
-# 在 output_path = result["output_path"] 后
-display_name = _compute_display_name("modify", conversation_files_list, source_var=source)
-# 然后 save_message 加参数：
-save_message(
-    conv_id, "assistant", content=..., tool_calls=..., output_path=output_path,
-    output_display_name=display_name,
-)
-# yield 加字段：
+excel_input_list = [f for f in files if f.get("type") != "image"]
+display_name = _compute_display_name("modify", excel_input_list, source_var=source)
+```
+
+修改两处 yield，加 `output_display_name`：
+
+```python
+yield {
+    "type": "diff_review",
+    "diff": diff_data,
+    "output_path": output_path,
+    "output_display_name": display_name,  # 新增
+    "input_path": source_path,
+    ...
+}
+# done 事件不需要带（因为 diff 流程 output_path=None）
+yield {"type": "done", "output_path": None}
+```
+
+- **create 分支**（line 421-444）：在 `output_path = result["output_path"]` 之后：
+
+```python
+excel_input_list = [f for f in files if f.get("type") != "image"]
+display_name = _compute_display_name("create", excel_input_list)
+
 yield {"type": "output_ready", "output_path": output_path, "output_display_name": display_name}
 yield {"type": "done", "output_path": output_path, "output_display_name": display_name}
 ```
 
-**Step 3**：修改 `backend/app/api/diff.py` 的 approve 流程
+**Step 3**：修改 `backend/app/api/chat.py`：
 
-找到调用 `update_last_assistant_output(conv_id, output_path)` 的地方，加上 display_name 参数（从保存在 state 里的数据取，或同样用 `_compute_display_name` 重算）。
+- 在事件循环里新增 `output_display_name` 变量捕获，跟 `output_path` 并行：
 
-**Step 4**：本地验证（需要完整 agent 链路，可以在 NAS 部署后验证）
+```python
+output_path = None
+output_display_name = None
+```
+
+- 在 `diff_review` 分支（line 102-120）存入 pending_diffs 时加字段：
+
+```python
+if event.get("type") == "diff_review":
+    output_path = event.get("output_path") or output_path
+    output_display_name = event.get("output_display_name") or output_display_name
+    if conv_id:
+        pending_diffs[conv_id] = {
+            ...
+            "output_path": event["output_path"],
+            "output_display_name": event.get("output_display_name"),  # 新增
+            ...
+        }
+```
+
+- 在 `output_ready` 和 `done` 分支补充（line 134-137）：
+
+```python
+elif event["type"] == "output_ready":
+    output_path = event.get("output_path")
+    output_display_name = event.get("output_display_name") or output_display_name
+elif event["type"] == "done":
+    output_path = event.get("output_path") or output_path
+    output_display_name = event.get("output_display_name") or output_display_name
+```
+
+- 最后 `save_message` 调用（line 143）传参：
+
+```python
+save_message(
+    conv_id,
+    "assistant",
+    content=full_content or None,
+    tool_calls=all_tool_calls or None,
+    output_path=output_path,
+    output_display_name=output_display_name,  # 新增
+    error=error_msg,
+)
+```
+
+**Step 4**：修改 `backend/app/api/diff.py`：
+
+`diff.py:52` 取 `output_path = pending["output_path"]` 后，加：
+
+```python
+output_display_name = pending.get("output_display_name")
+```
+
+line 82 `update_last_assistant_output(conv_id, output_path)` 改：
+
+```python
+update_last_assistant_output(conv_id, output_path, output_display_name)
+```
 
 **Step 5**：Commit
 
 ```bash
-git add backend/app/services/agent.py backend/app/api/diff.py
-git commit -m "feat(download): agent 计算输出文件 display_name（含 modify/create/diff approve）"
+git add backend/app/services/agent.py backend/app/api/chat.py backend/app/api/diff.py
+git commit -m "feat(download): agent/chat/diff 链路透传 output_display_name"
 ```
 
 ---
@@ -308,9 +379,12 @@ export async function downloadFile(path, displayName = '') {
 }
 ```
 
-**Step 2**：`useChat.js` 的 `loadFromHistory` 把后端返回的 `output_display_name` 映射到前端 message 字段。Grep `output_path` 查找所有映射位置。
+**Step 2**：`useChat.js` 三处需要映射 `output_display_name` → `outputDisplayName`：
 
-**Step 3**：SSE 事件处理：`useChat.js` 处理 `output_ready` / `done` 事件时把 `output_display_name` 同样存入 message。
+- `handleEvent` 的 `output_ready` case（约 line 40）：同时设置 `assistantMsg.outputPath` 和 `assistantMsg.outputDisplayName = event.output_display_name`
+- `handleEvent` 的 `done` case（约 line 45）：同样两个字段
+- `loadFromHistory`（约 line 137）：`outputDisplayName: m.output_display_name || null`
+- 初始化 assistantMsg 的地方（约 line 74 / 98）：`outputDisplayName: null`
 
 **Step 4**：`MessageBubble.vue` 的 `handleDownload` 改为：
 
@@ -324,7 +398,7 @@ async function handleDownload(path, displayName) {
 }
 ```
 
-模板里 `@click="handleDownload(message.outputPath, message.outputDisplayName)"`。
+模板里把当前的 `@click="handleDownload(message.outputPath)"` 改为 `@click="handleDownload(message.outputPath, message.outputDisplayName)"`。按钮的文字（line ~136 "下载结果文件"）可以改为动态：`{{ message.outputDisplayName || '下载结果文件' }}`，让用户提前看到下载文件名。
 
 **Step 5**：`npm run build` 零错误
 
