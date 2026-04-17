@@ -8,7 +8,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from ..database import get_db
+from ..database import get_db, get_setting, set_setting
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -172,3 +172,10 @@ async def change_password(
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+@router.get("/config")
+async def get_auth_config():
+    """公开的认证配置，用于登录页决定是否显示注册入口"""
+    allow = get_setting("allow_registration", "true") == "true"
+    return {"allow_registration": allow}
