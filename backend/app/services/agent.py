@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -13,6 +14,41 @@ from .sandbox import execute_code, execute_query
 from .excel import build_context, compute_diff, compute_create_summary
 
 logger = logging.getLogger("excel-agent.agent")
+
+
+def _compute_display_name(
+    mode: str,
+    conversation_files: list[dict],
+    source_var: str | None = None,
+) -> str:
+    """根据 modify/create 模式 + 输入文件计算下载显示名。
+
+    modify: {原文件名无扩展}_已修改.xlsx
+    create 有输入: {首个文件名无扩展}_汇总.xlsx
+    create 无输入: 结果_YYYYMMDD_HHMMSS.xlsx
+    """
+    if mode == "modify" and source_var:
+        # 根据 source_var (e.g. "INPUT_PATH_1") 定位到 conversation_files 的 index
+        try:
+            idx = int(source_var.rsplit("_", 1)[-1]) - 1
+            if 0 <= idx < len(conversation_files):
+                base = Path(conversation_files[idx]["filename"]).stem
+                return f"{base}_已修改.xlsx"
+        except (ValueError, IndexError, KeyError):
+            pass
+        # 降级：用第一个
+        if conversation_files:
+            base = Path(conversation_files[0]["filename"]).stem
+            return f"{base}_已修改.xlsx"
+
+    if mode == "create":
+        if conversation_files:
+            base = Path(conversation_files[0]["filename"]).stem
+            return f"{base}_汇总.xlsx"
+
+    # 无输入 或 异常情况
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"结果_{ts}.xlsx"
 
 
 class LoopGuard:
@@ -394,10 +430,14 @@ async def run_agent(
                         logger.error("diff计算失败: %s", e, exc_info=True)
                         diff_data = {"summary": {}, "integrity": {}, "changes": [], "error": str(e)}
 
+                    excel_input_list = [f for f in files if f.get("type") != "image"]
+                    display_name = _compute_display_name("modify", excel_input_list, source_var=source)
+
                     yield {
                         "type": "diff_review",
                         "diff": diff_data,
                         "output_path": output_path,
+                        "output_display_name": display_name,
                         "input_path": source_path,
                         "messages": messages,
                         "file_paths": file_paths,
@@ -438,9 +478,12 @@ async def run_agent(
                         logger.error("摘要生成失败: %s", e, exc_info=True)
                         summary_data = {"error": str(e)}
 
+                    excel_input_list = [f for f in files if f.get("type") != "image"]
+                    display_name = _compute_display_name("create", excel_input_list)
+
                     yield {"type": "create_summary", "summary": summary_data}
-                    yield {"type": "output_ready", "output_path": output_path}
-                    yield {"type": "done", "output_path": output_path}
+                    yield {"type": "output_ready", "output_path": output_path, "output_display_name": display_name}
+                    yield {"type": "done", "output_path": output_path, "output_display_name": display_name}
                     return
                 else:
                     error_type, is_retryable, limit_reached = errors.record(result["stderr"])

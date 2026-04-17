@@ -92,6 +92,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
             full_content = ""
             all_tool_calls = []
             output_path = None
+            output_display_name = None
             error_msg = None
 
             async for event in run_agent(
@@ -101,11 +102,13 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
                 # 拦截 diff_review 事件：存 messages 到 pending_diffs
                 if event.get("type") == "diff_review":
                     output_path = event.get("output_path") or output_path
+                    output_display_name = event.get("output_display_name") or output_display_name
                     if conv_id:
                         pending_diffs[conv_id] = {
                             "messages": event["messages"],
                             "diff": event["diff"],
                             "output_path": event["output_path"],
+                            "output_display_name": event.get("output_display_name"),
                             "input_path": event["input_path"],
                             "file_paths": event["file_paths"],
                             "files": event.get("files", files),
@@ -133,8 +136,10 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
                         all_tool_calls[-1]["result"] = event.get("result", "")
                 elif event["type"] == "output_ready":
                     output_path = event.get("output_path")
+                    output_display_name = event.get("output_display_name") or output_display_name
                 elif event["type"] == "done":
                     output_path = event.get("output_path") or output_path
+                    output_display_name = event.get("output_display_name") or output_display_name
                 elif event["type"] == "error":
                     error_msg = event.get("message")
 
@@ -146,6 +151,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
                     content=full_content or None,
                     tool_calls=all_tool_calls or None,
                     output_path=output_path,
+                    output_display_name=output_display_name,
                     error=error_msg,
                 )
 

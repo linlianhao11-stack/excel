@@ -50,6 +50,7 @@ async def approve_diff(req: ApproveRequest, user: dict = Depends(get_current_use
 
     pending = pending_diffs.pop(conv_id)
     output_path = pending["output_path"]
+    output_display_name = pending.get("output_display_name")
     diff_data = pending["diff"]
     user_message = pending.get("user_message", "")
 
@@ -70,21 +71,26 @@ async def approve_diff(req: ApproveRequest, user: dict = Depends(get_current_use
         logger.warning("重新profile失败: %s", e)
         new_profile = {}
 
+    # 关键：filename 稳定继承（不使用 UUID 磁盘名），path 更新为新输出
+    prev_filename = (
+        state["current_file"]["filename"] if state.get("current_file")
+        else (pending["files"][0]["filename"] if pending.get("files") else output_path.rsplit("/", 1)[-1])
+    )
     state["current_file"] = {
         "file_id": f"result_{conv_id}_{len(state['operation_history'])}",
-        "filename": output_path.rsplit("/", 1)[-1],
+        "filename": prev_filename,
         "path": output_path,
         "type": "excel",
         "profile": new_profile,
     }
 
-    # 将 output_path 写回数据库消息
-    update_last_assistant_output(conv_id, output_path)
+    # 将 output_path 写回数据库消息（含 display_name）
+    update_last_assistant_output(conv_id, output_path, output_display_name)
 
-    logger.info("Diff审批通过 conv=%s output=%s history_len=%d",
-                conv_id, output_path, len(state["operation_history"]))
+    logger.info("Diff审批通过 conv=%s output=%s display=%s history_len=%d",
+                conv_id, output_path, output_display_name, len(state["operation_history"]))
 
-    return {"output_path": output_path}
+    return {"output_path": output_path, "output_display_name": output_display_name}
 
 
 @router.post("/reject")
@@ -130,6 +136,7 @@ async def reject_diff(req: RejectRequest, user: dict = Depends(get_current_user)
                         "messages": event["messages"],
                         "diff": event["diff"],
                         "output_path": event["output_path"],
+                        "output_display_name": event.get("output_display_name"),
                         "input_path": event["input_path"],
                         "file_paths": event["file_paths"],
                         "files": event.get("files", files),
