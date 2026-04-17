@@ -81,7 +81,7 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 async def login(req: LoginRequest):
     conn = get_db()
     row = conn.execute(
-        "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
+        "SELECT id, username, password_hash, is_admin, is_active FROM users WHERE username = ?",
         (req.username,),
     ).fetchone()
     conn.close()
@@ -91,6 +91,9 @@ async def login(req: LoginRequest):
 
     if not bcrypt.checkpw(req.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "用户名或密码错误")
+
+    if not row["is_active"]:
+        raise HTTPException(401, "账号已被禁用，请联系管理员")
 
     token = create_token(row["id"], row["username"], bool(row["is_admin"]))
     return {
