@@ -45,6 +45,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class SetActiveRequest(BaseModel):
+    is_active: bool
+
+
 def create_token(user_id: int, username: str, is_admin: bool) -> str:
     payload = {
         "user_id": user_id,
@@ -253,6 +257,30 @@ async def admin_reset_password(
     pw_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
     conn.execute(
         "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@router.patch("/users/{user_id}/active")
+async def set_user_active(
+    user_id: int,
+    req: SetActiveRequest,
+    admin: dict = Depends(require_admin),
+):
+    if user_id == admin["user_id"] and not req.is_active:
+        raise HTTPException(400, "不能禁用自己")
+
+    conn = get_db()
+    row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "用户不存在")
+
+    conn.execute(
+        "UPDATE users SET is_active = ? WHERE id = ?",
+        (1 if req.is_active else 0, user_id),
     )
     conn.commit()
     conn.close()
