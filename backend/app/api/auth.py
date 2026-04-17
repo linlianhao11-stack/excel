@@ -36,6 +36,11 @@ class AuthConfigRequest(BaseModel):
     allow_registration: bool
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
 def create_token(user_id: int, username: str, is_admin: bool) -> str:
     payload = {
         "user_id": user_id,
@@ -191,3 +196,36 @@ async def update_auth_config(
 ):
     set_setting("allow_registration", "true" if req.allow_registration else "false")
     return {"ok": True}
+
+
+@router.post("/register")
+async def register(req: RegisterRequest):
+    allow = get_setting("allow_registration", "true") == "true"
+    if not allow:
+        raise HTTPException(403, "注册功能已关闭")
+
+    if not req.username or not req.password:
+        raise HTTPException(400, "用户名和密码不能为空")
+
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT id FROM users WHERE username = ?", (req.username,)
+    ).fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(400, "用户名已存在")
+
+    pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
+    cur = conn.execute(
+        "INSERT INTO users (username, password_hash, is_admin, is_active) VALUES (?, ?, 0, 1)",
+        (req.username, pw_hash),
+    )
+    user_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    token = create_token(user_id, req.username, False)
+    return {
+        "token": token,
+        "user": {"id": user_id, "username": req.username, "is_admin": False},
+    }
