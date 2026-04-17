@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     is_admin BOOLEAN DEFAULT 0,
+    is_active BOOLEAN DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -66,6 +67,13 @@ def init_db() -> None:
     conn = get_db()
     conn.executescript(SCHEMA)
 
+    # 兼容已存在的库：若 is_active 列缺失则补上
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "is_active" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1")
+        conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
+        conn.commit()
+
     # 创建默认管理员账号（如果不存在）
     existing = conn.execute(
         "SELECT id FROM users WHERE username = ?", ("admin",)
@@ -95,6 +103,17 @@ def init_db() -> None:
                 conn.execute(
                     "INSERT INTO settings (key, value) VALUES (?, ?)", (key, value)
                 )
+
+    # 注册开关默认开启
+    existing = conn.execute(
+        "SELECT key FROM settings WHERE key = ?", ("allow_registration",)
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("allow_registration", "true"),
+        )
+        conn.commit()
     conn.commit()
     conn.close()
 
