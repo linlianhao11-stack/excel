@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT,
     tool_calls TEXT,
     output_path TEXT,
+    output_display_name TEXT,
     error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -72,6 +73,12 @@ def init_db() -> None:
     if "is_active" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1")
         conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
+        conn.commit()
+
+    # 兼容已存在的库：若 messages.output_display_name 列缺失则补上
+    msg_cols = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    if "output_display_name" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN output_display_name TEXT")
         conn.commit()
 
     # 创建默认管理员账号（如果不存在）
