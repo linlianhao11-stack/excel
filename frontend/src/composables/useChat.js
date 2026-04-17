@@ -39,10 +39,12 @@ function _handleEvent(assistantMsg, event, conversationId) {
       break
     case 'output_ready':
       assistantMsg.outputPath = event.output_path
+      assistantMsg.outputDisplayName = event.output_display_name || assistantMsg.outputDisplayName
       break
     case 'done':
       status.value = null
       assistantMsg.outputPath = event.output_path || assistantMsg.outputPath
+      assistantMsg.outputDisplayName = event.output_display_name || assistantMsg.outputDisplayName
       streaming.value = false
       break
     case 'error':
@@ -72,6 +74,7 @@ export function useChat() {
       content: '',
       toolCalls: [],
       outputPath: null,
+      outputDisplayName: null,
       error: null,
       diff: null,
       createSummary: null,
@@ -96,6 +99,7 @@ export function useChat() {
       content: '',
       toolCalls: [],
       outputPath: null,
+      outputDisplayName: null,
       error: null,
       diff: null,
       createSummary: null,
@@ -135,6 +139,7 @@ export function useChat() {
         expanded: false,
       })),
       outputPath: m.output_path || null,
+      outputDisplayName: m.output_display_name || null,
       error: m.error || null,
       diff: null,
       createSummary: null,

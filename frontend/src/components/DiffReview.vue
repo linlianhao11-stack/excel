@@ -168,8 +168,8 @@ async function handleApprove() {
     const result = await approveDiff(props.conversationId)
     if (result.output_path) {
       approved.value = true
-      emit('approved', result.output_path)
-      await downloadFile(result.output_path)
+      emit('approved', result.output_path, result.output_display_name)
+      await downloadFile(result.output_path, result.output_display_name)
     } else if (result.error) {
       alert(result.error)
     }

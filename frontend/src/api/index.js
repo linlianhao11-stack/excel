@@ -128,17 +128,19 @@ export function chatStream(message, fileIds, conversationId, onEvent, imageIds =
   return controller
 }
 
-export async function downloadFile(path) {
+export async function downloadFile(path, displayName = '') {
   const filename = path.split('/').pop()
   const token = localStorage.getItem('token')
-  const response = await fetch(`/api/download?filename=${encodeURIComponent(filename)}&token=${encodeURIComponent(token)}`)
+  const params = new URLSearchParams({ filename, token })
+  if (displayName) params.set('display_name', displayName)
+  const response = await fetch(`/api/download?${params.toString()}`)
   if (!response.ok) throw new Error('下载失败')
   const blob = await response.blob()
   const reader = new FileReader()
   reader.onload = () => {
     const a = document.createElement('a')
     a.href = reader.result
-    a.download = filename
+    a.download = displayName || filename
     a.click()
   }
   reader.readAsDataURL(blob)

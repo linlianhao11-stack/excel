@@ -129,11 +129,11 @@
       <!-- 下载 + 预览按钮（审批通过后 或 create 模式） -->
       <div v-if="message.outputPath && !message.diff" class="flex items-center gap-2">
         <button
-          @click="handleDownload(message.outputPath)"
+          @click="handleDownload(message.outputPath, message.outputDisplayName)"
           class="inline-flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#333] text-white text-sm font-medium rounded-xl transition-colors cursor-pointer"
         >
           <Download class="w-4 h-4" />
-          下载结果文件
+          {{ message.outputDisplayName || '下载结果文件' }}
         </button>
         <button
           @click="showPreview = true"
@@ -181,8 +181,9 @@ function displayFilename(path) {
 
 const props = defineProps({ message: Object })
 
-function onDiffApproved(outputPath) {
+function onDiffApproved(outputPath, displayName) {
   props.message.outputPath = outputPath
+  props.message.outputDisplayName = displayName
   props.message.diff = null
 }
 
@@ -237,9 +238,9 @@ function renderMarkdown(text) {
   return DOMPurify.sanitize(html)
 }
 
-async function handleDownload(path) {
+async function handleDownload(path, displayName) {
   try {
-    await downloadFile(path)
+    await downloadFile(path, displayName)
   } catch {
     alert('下载失败，请重试')
   }
