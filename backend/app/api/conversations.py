@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -12,13 +13,27 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
 @router.get("")
-async def list_conversations(user: dict = Depends(get_current_user)):
+async def list_conversations(
+    scope: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     conn = get_db()
-    rows = conn.execute(
-        "SELECT id, title, created_at, updated_at FROM conversations "
-        "WHERE user_id = ? ORDER BY updated_at DESC",
-        (user["user_id"],),
-    ).fetchall()
+    if scope == "all" and user.get("is_admin"):
+        rows = conn.execute(
+            """SELECT c.id, c.title, c.created_at, c.updated_at, c.user_id,
+                      u.username AS owner_username,
+                      (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) AS message_count,
+                      (SELECT COUNT(*) FROM conversation_files WHERE conversation_id = c.id) AS file_count
+               FROM conversations c
+               LEFT JOIN users u ON c.user_id = u.id
+               ORDER BY c.updated_at DESC"""
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, title, created_at, updated_at FROM conversations "
+            "WHERE user_id = ? ORDER BY updated_at DESC",
+            (user["user_id"],),
+        ).fetchall()
     conn.close()
     return {"conversations": [dict(r) for r in rows]}
 
@@ -39,11 +54,17 @@ async def create_conversation(user: dict = Depends(get_current_user)):
 @router.get("/{conv_id}/messages")
 async def get_messages(conv_id: str, user: dict = Depends(get_current_user)):
     conn = get_db()
-    # 验证对话属于当前用户
-    conv = conn.execute(
-        "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
-        (conv_id, user["user_id"]),
-    ).fetchone()
+    # 管理员绕过 user_id 检查；其他用户仅能访问自己的对话
+    if user.get("is_admin"):
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ?",
+            (conv_id,),
+        ).fetchone()
+    else:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, user["user_id"]),
+        ).fetchone()
     if not conv:
         conn.close()
         raise HTTPException(404, "对话不存在")
@@ -82,10 +103,17 @@ async def get_messages(conv_id: str, user: dict = Depends(get_current_user)):
 @router.delete("/{conv_id}")
 async def delete_conversation(conv_id: str, user: dict = Depends(get_current_user)):
     conn = get_db()
-    conv = conn.execute(
-        "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
-        (conv_id, user["user_id"]),
-    ).fetchone()
+    # 管理员绕过 user_id 检查；其他用户仅能删除自己的对话
+    if user.get("is_admin"):
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ?",
+            (conv_id,),
+        ).fetchone()
+    else:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, user["user_id"]),
+        ).fetchone()
     if not conv:
         conn.close()
         raise HTTPException(404, "对话不存在")
