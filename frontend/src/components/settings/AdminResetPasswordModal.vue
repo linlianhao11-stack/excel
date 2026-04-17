@@ -29,10 +29,10 @@
           :style="{ borderColor: 'var(--input-border)', color: 'var(--text)', background: 'var(--surface)' }"
         />
         <div
-          v-if="error"
+          v-if="error || apiError"
           class="px-3 py-2 text-[13px] rounded-lg"
           :style="{ background: 'var(--error-subtle)', color: 'var(--error-emphasis)' }"
-        >{{ error }}</div>
+        >{{ error || apiError }}</div>
       </div>
 
       <div class="flex justify-end gap-2 px-6 py-4 border-t" :style="{ borderColor: 'var(--border)' }">
@@ -43,7 +43,7 @@
         >取消</button>
         <button
           @click="handleConfirm"
-          :disabled="!newPassword || loading"
+          :disabled="!newPassword || !confirmPassword || loading"
           class="px-4 py-2 text-sm text-white rounded-lg transition-colors disabled:opacity-50"
           :style="{ background: 'var(--primary)' }"
         >{{ loading ? '提交中...' : '确认重置' }}</button>
@@ -57,7 +57,8 @@ import { ref } from 'vue'
 
 defineProps({
   username: { type: String, required: true },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  apiError: { type: String, default: '' }
 })
 const emit = defineEmits(['confirm', 'cancel'])
 

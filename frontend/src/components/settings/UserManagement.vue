@@ -54,8 +54,9 @@
       v-if="resetTarget"
       :username="resetTarget.username"
       :loading="resetLoading"
+      :api-error="resetApiError"
       @confirm="handleResetConfirm"
-      @cancel="resetTarget = null"
+      @cancel="closeResetModal"
     />
   </section>
 </template>
@@ -79,6 +80,7 @@ const newUsername = ref('')
 const newPassword = ref('')
 const resetTarget = ref(null)
 const resetLoading = ref(false)
+const resetApiError = ref('')
 const localError = ref('')
 
 function handleAdd() {
@@ -88,17 +90,23 @@ function handleAdd() {
 }
 
 function onResetPassword(user) {
-  localError.value = ''
+  resetApiError.value = ''
   resetTarget.value = user
 }
 
+function closeResetModal() {
+  resetTarget.value = null
+  resetApiError.value = ''
+}
+
 async function handleResetConfirm(newPw) {
+  resetApiError.value = ''
   resetLoading.value = true
   try {
     await adminResetPassword(resetTarget.value.id, newPw)
     resetTarget.value = null
   } catch (e) {
-    localError.value = e.response?.data?.detail || '重置密码失败'
+    resetApiError.value = e.response?.data?.detail || '重置密码失败'
   } finally {
     resetLoading.value = false
   }

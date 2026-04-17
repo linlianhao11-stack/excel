@@ -34,9 +34,14 @@
 
         <RegistrationToggle
           v-if="isAdmin"
-          v-model="allowRegistration"
+          :modelValue="allowRegistration"
           @update:modelValue="handleToggleRegistration"
         />
+        <div
+          v-if="isAdmin && toggleError"
+          class="text-[13px]"
+          :style="{ color: 'var(--error-emphasis)' }"
+        >{{ toggleError }}</div>
         <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
 
         <UserManagement
@@ -107,6 +112,7 @@ const userError = ref('')
 const pwSuccess = ref(false)
 const pwError = ref('')
 const allowRegistration = ref(true)
+const toggleError = ref('')
 
 async function loadSettings() {
   try {
@@ -166,11 +172,12 @@ async function loadAuthConfig() {
 }
 
 async function handleToggleRegistration(val) {
+  toggleError.value = ''
   try {
     await setAuthConfig(val)
     allowRegistration.value = val
   } catch (e) {
-    allowRegistration.value = !val  // 回滚 UI
+    toggleError.value = e.response?.data?.detail || '切换注册开关失败'
   }
 }
 
