@@ -3,7 +3,8 @@
     <TopControls @newChat="$emit('newChat')" />
 
     <div class="flex-1 overflow-y-auto">
-      <div class="max-w-xl px-6 py-14 mx-auto space-y-8">
+      <!-- 窄列：常规设置 -->
+      <div class="max-w-xl px-6 pt-14 mx-auto space-y-8">
         <div>
           <h1 class="text-2xl font-semibold" style="color: var(--text)">设置</h1>
           <p class="text-[14px] mt-1" style="color: var(--text-muted)">
@@ -62,6 +63,11 @@
           @changePassword="handleChangePassword"
         />
       </div>
+
+      <!-- 宽列：管理员全局对话表格，放最底部 -->
+      <div v-if="isAdmin" class="max-w-5xl px-6 py-14 mx-auto">
+        <AdminConversationsPanel />
+      </div>
     </div>
   </div>
 </template>
@@ -74,6 +80,7 @@ import AiModelSettings from './settings/AiModelSettings.vue'
 import UserManagement from './settings/UserManagement.vue'
 import ChangePassword from './settings/ChangePassword.vue'
 import RegistrationToggle from './settings/RegistrationToggle.vue'
+import AdminConversationsPanel from './settings/AdminConversationsPanel.vue'
 import {
   getSettings, updateSettings,
   listUsers, createUser, deleteUser, changePassword,
