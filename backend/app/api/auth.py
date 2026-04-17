@@ -13,7 +13,7 @@ from ..database import get_db
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "excel-agent-secret-change-me")
-JWT_EXPIRE_DAYS = 7
+JWT_EXPIRE_MINUTES = 30
 
 
 class LoginRequest(BaseModel):
@@ -37,7 +37,7 @@ def create_token(user_id: int, username: str, is_admin: bool) -> str:
         "user_id": user_id,
         "username": username,
         "is_admin": is_admin,
-        "exp": datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS),
+        "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
