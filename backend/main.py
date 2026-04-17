@@ -41,7 +41,7 @@ app.add_middleware(
 )
 
 # ── JWT 滑动刷新中间件 ──
-from datetime import datetime
+from datetime import datetime, timezone
 from app.api.auth import create_token
 
 REFRESH_THRESHOLD_SECONDS = 15 * 60  # 剩余 <15 分钟才刷新
@@ -52,7 +52,8 @@ async def refresh_token_middleware(request, call_next):
     response = await call_next(request)
     payload = getattr(request.state, "user_payload", None)
     if payload:
-        remaining = payload["exp"] - datetime.utcnow().timestamp()
+        # 用 timezone-aware UTC 保持与 PyJWT exp(calendar.timegm) 一致
+        remaining = payload["exp"] - datetime.now(timezone.utc).timestamp()
         if 0 < remaining < REFRESH_THRESHOLD_SECONDS:
             new_token = create_token(
                 payload["user_id"], payload["username"], payload["is_admin"]
