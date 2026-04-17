@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
+from ..database import get_db
 from ..services.excel import WORK_DIR
 from .auth import get_current_user, JWT_SECRET
 
@@ -19,9 +20,21 @@ async def download_file(filename: str, token: str = ""):
         raise HTTPException(401, "未登录")
     import jwt as pyjwt
     try:
-        pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except Exception:
         raise HTTPException(401, "无效的登录凭证")
+    # 与其他鉴权端点一致：实时校验账号未被禁用
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT is_active FROM users WHERE id = ?", (payload.get("user_id"),)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(401, "账号不存在")
+    if not row["is_active"]:
+        raise HTTPException(401, "账号已被禁用")
     # 只接受文件名，不接受路径，防止路径穿越
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "非法文件名")

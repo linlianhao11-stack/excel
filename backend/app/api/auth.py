@@ -119,6 +119,7 @@ async def login(req: LoginRequest):
             "id": row["id"],
             "username": row["username"],
             "is_admin": bool(row["is_admin"]),
+            "is_active": bool(row["is_active"]),
         },
     }
 
@@ -212,30 +213,32 @@ async def register(req: RegisterRequest):
     if not allow:
         raise HTTPException(403, "注册功能已关闭")
 
-    if not req.username or not req.password:
+    username = (req.username or "").strip()
+    if not username or not req.password:
         raise HTTPException(400, "用户名和密码不能为空")
 
     conn = get_db()
-    existing = conn.execute(
-        "SELECT id FROM users WHERE username = ?", (req.username,)
-    ).fetchone()
-    if existing:
+    try:
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing:
+            raise HTTPException(400, "用户名已存在")
+
+        pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
+        cur = conn.execute(
+            "INSERT INTO users (username, password_hash, is_admin, is_active) VALUES (?, ?, 0, 1)",
+            (username, pw_hash),
+        )
+        user_id = cur.lastrowid
+        conn.commit()
+    finally:
         conn.close()
-        raise HTTPException(400, "用户名已存在")
 
-    pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
-    cur = conn.execute(
-        "INSERT INTO users (username, password_hash, is_admin, is_active) VALUES (?, ?, 0, 1)",
-        (req.username, pw_hash),
-    )
-    user_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-
-    token = create_token(user_id, req.username, False)
+    token = create_token(user_id, username, False)
     return {
         "token": token,
-        "user": {"id": user_id, "username": req.username, "is_admin": False},
+        "user": {"id": user_id, "username": username, "is_admin": False, "is_active": True},
     }
 
 
@@ -249,17 +252,18 @@ async def admin_reset_password(
         raise HTTPException(400, "新密码不能为空")
 
     conn = get_db()
-    row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(404, "用户不存在")
+    try:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "用户不存在")
 
-    pw_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
-    conn.execute(
-        "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id)
-    )
-    conn.commit()
-    conn.close()
+        pw_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True}
 
 
@@ -273,15 +277,16 @@ async def set_user_active(
         raise HTTPException(400, "不能禁用自己")
 
     conn = get_db()
-    row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(404, "用户不存在")
+    try:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "用户不存在")
 
-    conn.execute(
-        "UPDATE users SET is_active = ? WHERE id = ?",
-        (1 if req.is_active else 0, user_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.execute(
+            "UPDATE users SET is_active = ? WHERE id = ?",
+            (1 if req.is_active else 0, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True}
