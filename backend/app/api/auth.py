@@ -41,6 +41,10 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 def create_token(user_id: int, username: str, is_admin: bool) -> str:
     payload = {
         "user_id": user_id,
@@ -229,3 +233,27 @@ async def register(req: RegisterRequest):
         "token": token,
         "user": {"id": user_id, "username": req.username, "is_admin": False},
     }
+
+
+@router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(
+    user_id: int,
+    req: ResetPasswordRequest,
+    admin: dict = Depends(require_admin),
+):
+    if not req.new_password:
+        raise HTTPException(400, "新密码不能为空")
+
+    conn = get_db()
+    row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "用户不存在")
+
+    pw_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
+    conn.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
