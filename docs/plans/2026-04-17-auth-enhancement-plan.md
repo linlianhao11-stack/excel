@@ -104,10 +104,10 @@ if not existing:
 
 ```bash
 cd ~/Desktop/Excel/backend
-rm -f /tmp/excel_test.db
-DB_DIR=/tmp python -c "from app.database import init_db; init_db()"
-sqlite3 /tmp/excel_test.db ".schema users"
-sqlite3 /tmp/excel_test.db "SELECT * FROM settings WHERE key='allow_registration';"
+mkdir -p /tmp/excel_mig && rm -f /tmp/excel_mig/excel_agent.db
+DB_DIR=/tmp/excel_mig python -c "from app.database import init_db; init_db()"
+sqlite3 /tmp/excel_mig/excel_agent.db ".schema users"
+sqlite3 /tmp/excel_mig/excel_agent.db "SELECT * FROM settings WHERE key='allow_registration';"
 ```
 
 Expected: `users` 表含 `is_active`，`settings` 里 `allow_registration = true`
@@ -115,10 +115,10 @@ Expected: `users` 表含 `is_active`，`settings` 里 `allow_registration = true
 再验证兼容迁移（用旧 schema 模拟已有库）：
 
 ```bash
-rm -f /tmp/excel_test.db
-sqlite3 /tmp/excel_test.db "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password_hash TEXT, is_admin BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);"
-DB_DIR=/tmp python -c "from app.database import init_db; init_db()"
-sqlite3 /tmp/excel_test.db ".schema users"
+rm -f /tmp/excel_mig/excel_agent.db
+sqlite3 /tmp/excel_mig/excel_agent.db "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password_hash TEXT, is_admin BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);"
+DB_DIR=/tmp/excel_mig python -c "from app.database import init_db; init_db()"
+sqlite3 /tmp/excel_mig/excel_agent.db ".schema users"
 ```
 
 Expected: 老表成功加了 `is_active` 列，无报错
@@ -251,14 +251,14 @@ TOKEN=$(curl -s -X POST http://localhost:8910/api/auth/login -H "Content-Type: a
 # 测试 /me
 curl -s http://localhost:8910/api/auth/me -H "Authorization: Bearer $TOKEN"
 # 禁用 admin（模拟）
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE users SET is_active = 0 WHERE username='admin'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE users SET is_active = 0 WHERE username='admin'"
 # 再试
 curl -s http://localhost:8910/api/auth/me -H "Authorization: Bearer $TOKEN"
 ```
 
 Expected: 第一次返回 user，第二次返回 `{"detail":"账号已被禁用"}`
 
-还原：`sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE users SET is_active = 1 WHERE username='admin'"`
+还原：`sqlite3 /tmp/exceldev/excel_agent.db "UPDATE users SET is_active = 1 WHERE username='admin'"`
 
 **Step 3: 提交**
 
@@ -383,10 +383,10 @@ async def login(req: LoginRequest):
 
 ```bash
 # 禁用 admin
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE users SET is_active = 0 WHERE username='admin'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE users SET is_active = 0 WHERE username='admin'"
 curl -s -X POST http://localhost:8910/api/auth/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'
 # 恢复
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE users SET is_active = 1 WHERE username='admin'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE users SET is_active = 1 WHERE username='admin'"
 curl -s -X POST http://localhost:8910/api/auth/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'
 ```
 
@@ -431,10 +431,10 @@ async def get_auth_config():
 ```bash
 curl -s http://localhost:8910/api/auth/config
 # 关掉
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE settings SET value='false' WHERE key='allow_registration'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE settings SET value='false' WHERE key='allow_registration'"
 curl -s http://localhost:8910/api/auth/config
 # 恢复
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE settings SET value='true' WHERE key='allow_registration'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE settings SET value='true' WHERE key='allow_registration'"
 ```
 
 Expected: 第一次 `{"allow_registration":true}`，第二次 `{"allow_registration":false}`
@@ -552,11 +552,11 @@ curl -s -X POST http://localhost:8910/api/auth/register -H "Content-Type: applic
 # 重复
 curl -s -X POST http://localhost:8910/api/auth/register -H "Content-Type: application/json" -d '{"username":"testu1","password":"pass1"}'
 # 关闭后
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE settings SET value='false' WHERE key='allow_registration'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE settings SET value='false' WHERE key='allow_registration'"
 curl -s -X POST http://localhost:8910/api/auth/register -H "Content-Type: application/json" -d '{"username":"testu2","password":"pass2"}'
-sqlite3 /tmp/exceldev/db/excel_agent.db "UPDATE settings SET value='true' WHERE key='allow_registration'"
+sqlite3 /tmp/exceldev/excel_agent.db "UPDATE settings SET value='true' WHERE key='allow_registration'"
 # 清理测试用户
-sqlite3 /tmp/exceldev/db/excel_agent.db "DELETE FROM users WHERE username='testu1'"
+sqlite3 /tmp/exceldev/excel_agent.db "DELETE FROM users WHERE username='testu1'"
 ```
 
 Expected:
@@ -618,12 +618,12 @@ async def admin_reset_password(
 # 先创建一个测试用户
 curl -s -X POST http://localhost:8910/api/auth/register -H "Content-Type: application/json" -d '{"username":"rpu","password":"old"}'
 # 管理员重置
-TUID=$(sqlite3 /tmp/exceldev/db/excel_agent.db "SELECT id FROM users WHERE username='rpu'")
+TUID=$(sqlite3 /tmp/exceldev/excel_agent.db "SELECT id FROM users WHERE username='rpu'")
 curl -s -X POST http://localhost:8910/api/auth/users/$TUID/reset-password -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"new_password":"newpw"}'
 # 用新密码登录
 curl -s -X POST http://localhost:8910/api/auth/login -H "Content-Type: application/json" -d '{"username":"rpu","password":"newpw"}'
 # 清理
-sqlite3 /tmp/exceldev/db/excel_agent.db "DELETE FROM users WHERE username='rpu'"
+sqlite3 /tmp/exceldev/excel_agent.db "DELETE FROM users WHERE username='rpu'"
 ```
 
 Expected: 重置后新密码能登录
@@ -681,15 +681,15 @@ async def set_user_active(
 ```bash
 # 创建测试用户
 curl -s -X POST http://localhost:8910/api/auth/register -H "Content-Type: application/json" -d '{"username":"setu","password":"p"}'
-TUID=$(sqlite3 /tmp/exceldev/db/excel_agent.db "SELECT id FROM users WHERE username='setu'")
+TUID=$(sqlite3 /tmp/exceldev/excel_agent.db "SELECT id FROM users WHERE username='setu'")
 # 禁用
 curl -s -X PATCH http://localhost:8910/api/auth/users/$TUID/active -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"is_active":false}'
-sqlite3 /tmp/exceldev/db/excel_agent.db "SELECT username, is_active FROM users WHERE id=$TUID"
+sqlite3 /tmp/exceldev/excel_agent.db "SELECT username, is_active FROM users WHERE id=$TUID"
 # 管理员禁自己
-ADMIN_ID=$(sqlite3 /tmp/exceldev/db/excel_agent.db "SELECT id FROM users WHERE username='admin'")
+ADMIN_ID=$(sqlite3 /tmp/exceldev/excel_agent.db "SELECT id FROM users WHERE username='admin'")
 curl -s -X PATCH http://localhost:8910/api/auth/users/$ADMIN_ID/active -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"is_active":false}'
 # 清理
-sqlite3 /tmp/exceldev/db/excel_agent.db "DELETE FROM users WHERE username='setu'"
+sqlite3 /tmp/exceldev/excel_agent.db "DELETE FROM users WHERE username='setu'"
 ```
 
 Expected:
@@ -852,33 +852,23 @@ git commit -m "feat(auth): 前端 API 层新增注册/配置/重置/禁用端点
 
 ---
 
-## Task 13: `useAuth.js` 加 `register` + token 同步
+## Task 13: `useAuth.js` 加 `register` 方法
 
 **Files:**
 - Modify: `frontend/src/composables/useAuth.js`
+
+**理念**：token 滑动刷新只更新 localStorage，不改变登录态。UI 层 `isLoggedIn` 判断与当前 token 的时效无关，只要 localStorage 有 token 就视为已登录。请求发起时 axios 拦截器总是读最新 `localStorage.getItem('token')`。因此不需要跨 tab 同步 / 轮询，保持最小改动。
 
 **Step 1: 改写整个文件**
 
 完整替换：
 
 ```js
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import axios from 'axios'
 
 const token = ref(localStorage.getItem('token') || '')
 const user = ref(JSON.parse(localStorage.getItem('user') || 'null'))
-
-// 监听 storage 事件：其他 tab 或 api 拦截器更新 token 时同步
-window.addEventListener('storage', (e) => {
-  if (e.key === 'token') token.value = e.newValue || ''
-  if (e.key === 'user') user.value = e.newValue ? JSON.parse(e.newValue) : null
-})
-
-// 轮询兜底：同 tab 内 localStorage.setItem 不触发 storage 事件
-setInterval(() => {
-  const t = localStorage.getItem('token') || ''
-  if (t !== token.value) token.value = t
-}, 5000)
 
 export function useAuth() {
   const isLoggedIn = computed(() => !!token.value)
@@ -913,30 +903,20 @@ export function useAuth() {
 }
 ```
 
-说明：`storage` 事件只在跨 tab 时触发，api 拦截器同 tab 内更新 token 不会广播。这里加 5 秒轮询作为兜底，用于将 `localStorage.token` 同步到 `ref.value`（仅用于 UI 层可感知；鉴权实际依赖的是 localStorage，不受影响）。
-
-**Step 2: 手动验证（后续 Task 22 统一验证）**
-
-先确保 `import { ref, computed, watch }` 语法无问题：
+**Step 2: 手动验证**
 
 ```bash
 cd ~/Desktop/Excel/frontend
 npm run build
 ```
 
-Expected: build 通过（watch 可能未使用，若警告去掉 import）
-
-实际上 `watch` 未用到，请在 import 中去掉：
-
-```js
-import { ref, computed } from 'vue'
-```
+Expected: build 通过
 
 **Step 3: 提交**
 
 ```bash
 git add frontend/src/composables/useAuth.js
-git commit -m "feat(auth): useAuth 加 register 方法 + token 跨 tab 同步"
+git commit -m "feat(auth): useAuth 加 register 方法"
 ```
 
 ---
@@ -1415,6 +1395,8 @@ git commit -m "feat(auth): AdminResetPasswordModal 管理员重置密码弹窗"
 **Files:**
 - Modify: `frontend/src/components/settings/UserManagement.vue`
 
+**理念**：管理操作 API 调用放在 UserManagement 内部（它本来就负责用户列表），对父组件只暴露两个事件：`addUser`（父组件已有逻辑，保留）和 `refresh`（操作完成后请父重载列表）。这样避免 `emit` 无法 `await` 的异步 bug。
+
 **Step 1: 完整替换**
 
 ```vue
@@ -1437,7 +1419,7 @@ git commit -m "feat(auth): AdminResetPasswordModal 管理员重置密码弹窗"
         :user="u"
         :current-user-id="currentUserId"
         @resetPassword="onResetPassword"
-        @toggleActive="onToggleActive"
+        @toggleActive="handleToggleActive"
         @deleteUser="(id) => $emit('deleteUser', id)"
       />
     </div>
@@ -1465,7 +1447,9 @@ git commit -m "feat(auth): AdminResetPasswordModal 管理员重置密码弹窗"
       >添加</button>
     </div>
 
-    <div v-if="error" class="text-[13px]" :style="{ color: 'var(--error-emphasis)' }">{{ error }}</div>
+    <div v-if="error || localError" class="text-[13px]" :style="{ color: 'var(--error-emphasis)' }">
+      {{ error || localError }}
+    </div>
 
     <!-- 重置密码弹窗 -->
     <AdminResetPasswordModal
@@ -1483,6 +1467,7 @@ import { ref } from 'vue'
 import { Users } from 'lucide-vue-next'
 import UserListRow from './UserListRow.vue'
 import AdminResetPasswordModal from './AdminResetPasswordModal.vue'
+import { adminResetPassword, setUserActive } from '../../api'
 
 defineProps({
   users: { type: Array, default: () => [] },
@@ -1490,12 +1475,13 @@ defineProps({
   error: { type: String, default: '' }
 })
 
-const emit = defineEmits(['addUser', 'deleteUser', 'resetPassword', 'toggleActive'])
+const emit = defineEmits(['addUser', 'deleteUser', 'refresh'])
 
 const newUsername = ref('')
 const newPassword = ref('')
 const resetTarget = ref(null)
 const resetLoading = ref(false)
+const localError = ref('')
 
 function handleAdd() {
   emit('addUser', { username: newUsername.value, password: newPassword.value })
@@ -1504,21 +1490,30 @@ function handleAdd() {
 }
 
 function onResetPassword(user) {
+  localError.value = ''
   resetTarget.value = user
 }
 
 async function handleResetConfirm(newPw) {
   resetLoading.value = true
   try {
-    await emit('resetPassword', { userId: resetTarget.value.id, newPassword: newPw })
+    await adminResetPassword(resetTarget.value.id, newPw)
     resetTarget.value = null
+  } catch (e) {
+    localError.value = e.response?.data?.detail || '重置密码失败'
   } finally {
     resetLoading.value = false
   }
 }
 
-function onToggleActive(user) {
-  emit('toggleActive', { userId: user.id, isActive: !user.is_active })
+async function handleToggleActive({ userId, isActive }) {
+  localError.value = ''
+  try {
+    await setUserActive(userId, isActive)
+    emit('refresh')
+  } catch (e) {
+    localError.value = e.response?.data?.detail || '操作失败'
+  }
 }
 </script>
 ```
@@ -1605,7 +1600,6 @@ import {
   getSettings, updateSettings,
   listUsers, createUser, deleteUser, changePassword,
   getAuthConfig, setAuthConfig,
-  adminResetPassword, setUserActive,
 } from '../api'
 ```
 
@@ -1628,7 +1622,7 @@ import RegistrationToggle from './settings/RegistrationToggle.vue'
 <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
 ```
 
-**Step 3: UserManagement 新增事件绑定**
+**Step 3: UserManagement 新增 refresh 事件绑定**
 
 ```vue
 <UserManagement
@@ -1638,8 +1632,7 @@ import RegistrationToggle from './settings/RegistrationToggle.vue'
   :error="userError"
   @addUser="handleAddUser"
   @deleteUser="handleDeleteUser"
-  @resetPassword="handleResetPassword"
-  @toggleActive="handleToggleActive"
+  @refresh="loadUsers"
 />
 ```
 
@@ -1666,23 +1659,6 @@ async function handleToggleRegistration(val) {
     allowRegistration.value = !val  // 回滚 UI
   }
 }
-
-async function handleResetPassword({ userId, newPassword }) {
-  try {
-    await adminResetPassword(userId, newPassword)
-  } catch (e) {
-    userError.value = e.response?.data?.detail || '重置失败'
-  }
-}
-
-async function handleToggleActive({ userId, isActive }) {
-  try {
-    await setUserActive(userId, isActive)
-    await loadUsers()
-  } catch (e) {
-    userError.value = e.response?.data?.detail || '操作失败'
-  }
-}
 ```
 
 改 `onMounted`：
@@ -1694,6 +1670,8 @@ onMounted(() => {
   loadAuthConfig()
 })
 ```
+
+**注意**：`handleDeleteUser` 已有，删除后也需 `loadUsers`，原代码已有这个行为，无需改动。
 
 **Step 5: build 验证**
 
@@ -1784,36 +1762,32 @@ Expected: 应被 401 踢回登录页
 
 **Files:** 无本地修改
 
-**Step 1: 确认 CHANGELOG / 版本**
+**说明**：Dockerfile stage 1 在容器内重新 `npm run build` 前端，所以不需要 scp `backend/static`。只需 scp 改动的源文件；Docker build 时会重新构建。
 
-```bash
-# 当前版本查看（如 package.json）
-grep version ~/Desktop/Excel/frontend/package.json
-```
-
-**Step 2: 构建前端产物**
-
-```bash
-cd ~/Desktop/Excel/frontend
-npm run build
-```
-
-Expected: `backend/static/` 下有新构建产物
-
-**Step 3: scp 修改的后端和前端产物到 NAS**
+**Step 1: scp 改动的后端源文件 + 前端源文件到 NAS**
 
 按 CLAUDE.md 部署规范：
 
 ```bash
 cd ~/Desktop/Excel
+# 后端 3 个文件
 sshpass -p 'theendqq123' scp backend/app/api/auth.py admin@192.168.124.3:/home/admin/excel/backend/app/api/auth.py
 sshpass -p 'theendqq123' scp backend/app/database.py admin@192.168.124.3:/home/admin/excel/backend/app/database.py
 sshpass -p 'theendqq123' scp backend/main.py admin@192.168.124.3:/home/admin/excel/backend/main.py
-# 前端静态产物
-sshpass -p 'theendqq123' scp -r backend/static admin@192.168.124.3:/home/admin/excel/backend/
+
+# 前端源文件：组件、api、composable
+sshpass -p 'theendqq123' scp frontend/src/api/index.js admin@192.168.124.3:/home/admin/excel/frontend/src/api/index.js
+sshpass -p 'theendqq123' scp frontend/src/composables/useAuth.js admin@192.168.124.3:/home/admin/excel/frontend/src/composables/useAuth.js
+sshpass -p 'theendqq123' scp frontend/src/components/LoginPage.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/LoginPage.vue
+sshpass -p 'theendqq123' scp frontend/src/components/SettingsPage.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/SettingsPage.vue
+sshpass -p 'theendqq123' scp -r frontend/src/components/auth admin@192.168.124.3:/home/admin/excel/frontend/src/components/
+sshpass -p 'theendqq123' scp frontend/src/components/settings/UserManagement.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/settings/UserManagement.vue
+sshpass -p 'theendqq123' scp frontend/src/components/settings/UserListRow.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/settings/UserListRow.vue
+sshpass -p 'theendqq123' scp frontend/src/components/settings/AdminResetPasswordModal.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/settings/AdminResetPasswordModal.vue
+sshpass -p 'theendqq123' scp frontend/src/components/settings/RegistrationToggle.vue admin@192.168.124.3:/home/admin/excel/frontend/src/components/settings/RegistrationToggle.vue
 ```
 
-**Step 4: NAS 上重建**
+**Step 2: NAS 上重建**
 
 ```bash
 sshpass -p 'theendqq123' ssh admin@192.168.124.3 "cd /home/admin/excel && echo 'theendqq123' | sudo -S docker compose up -d --build"
