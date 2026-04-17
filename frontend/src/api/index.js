@@ -5,6 +5,21 @@ const api = axios.create({
   timeout: 30000,
 })
 
+function decodeExp(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp || 0
+  } catch { return 0 }
+}
+
+function updateTokenIfNewer(newToken) {
+  if (!newToken) return
+  const cur = localStorage.getItem('token')
+  if (!cur || decodeExp(newToken) > decodeExp(cur)) {
+    localStorage.setItem('token', newToken)
+  }
+}
+
 // 自动附加 JWT token
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -14,9 +29,13 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// 401 时自动跳转登录
+// 响应拦截器：滑动刷新 token + 401 跳登录
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const newToken = res.headers['x-new-token']
+    if (newToken) updateTokenIfNewer(newToken)
+    return res
+  },
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
@@ -72,6 +91,9 @@ export function chatStream(message, fileIds, conversationId, onEvent, imageIds =
       window.location.reload()
       return
     }
+    // 读滑动刷新的新 token
+    const _newToken = response.headers.get('X-New-Token')
+    if (_newToken) updateTokenIfNewer(_newToken)
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -207,6 +229,9 @@ export function rejectDiffStream(conversationId, reasonType, reasonText, onEvent
       window.location.reload()
       return
     }
+    // 读滑动刷新的新 token
+    const _newToken = response.headers.get('X-New-Token')
+    if (_newToken) updateTokenIfNewer(_newToken)
     // 非 SSE 响应（如超限错误），直接解析 JSON
     const contentType = response.headers.get('content-type') || ''
     if (contentType.includes('application/json')) {
@@ -245,4 +270,33 @@ export function rejectDiffStream(conversationId, reasonType, reasonText, onEvent
   })
 
   return controller
+}
+
+// 认证配置
+export async function getAuthConfig() {
+  const { data } = await api.get('/auth/config')
+  return data
+}
+
+export async function setAuthConfig(allowRegistration) {
+  const { data } = await api.put('/auth/config', { allow_registration: allowRegistration })
+  return data
+}
+
+// 自注册
+export async function registerUser(username, password) {
+  const { data } = await api.post('/auth/register', { username, password })
+  return data
+}
+
+// 管理员重置他人密码
+export async function adminResetPassword(userId, newPassword) {
+  const { data } = await api.post(`/auth/users/${userId}/reset-password`, { new_password: newPassword })
+  return data
+}
+
+// 启用/禁用账号
+export async function setUserActive(userId, isActive) {
+  const { data } = await api.patch(`/auth/users/${userId}/active`, { is_active: isActive })
+  return data
 }
