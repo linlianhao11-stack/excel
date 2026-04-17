@@ -40,6 +40,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── JWT 滑动刷新中间件 ──
+from datetime import datetime
+from app.api.auth import create_token
+
+REFRESH_THRESHOLD_SECONDS = 15 * 60  # 剩余 <15 分钟才刷新
+
+
+@app.middleware("http")
+async def refresh_token_middleware(request, call_next):
+    response = await call_next(request)
+    payload = getattr(request.state, "user_payload", None)
+    if payload:
+        remaining = payload["exp"] - datetime.utcnow().timestamp()
+        if 0 < remaining < REFRESH_THRESHOLD_SECONDS:
+            new_token = create_token(
+                payload["user_id"], payload["username"], payload["is_admin"]
+            )
+            response.headers["X-New-Token"] = new_token
+    return response
+
+
 # 注册路由
 from app.api.files import router as files_router
 from app.api.chat import router as chat_router
