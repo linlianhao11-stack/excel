@@ -32,6 +32,13 @@
 
         <div class="h-px" style="background: var(--border)" />
 
+        <RegistrationToggle
+          v-if="isAdmin"
+          v-model="allowRegistration"
+          @update:modelValue="handleToggleRegistration"
+        />
+        <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
+
         <UserManagement
           v-if="isAdmin"
           :users="userList"
@@ -39,6 +46,7 @@
           :error="userError"
           @addUser="handleAddUser"
           @deleteUser="handleDeleteUser"
+          @refresh="loadUsers"
         />
 
         <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
@@ -60,9 +68,11 @@ import TopControls from './layout/TopControls.vue'
 import AiModelSettings from './settings/AiModelSettings.vue'
 import UserManagement from './settings/UserManagement.vue'
 import ChangePassword from './settings/ChangePassword.vue'
+import RegistrationToggle from './settings/RegistrationToggle.vue'
 import {
   getSettings, updateSettings,
-  listUsers, createUser, deleteUser, changePassword
+  listUsers, createUser, deleteUser, changePassword,
+  getAuthConfig, setAuthConfig,
 } from '../api'
 
 defineEmits(['newChat'])
@@ -96,6 +106,7 @@ const userList = ref([])
 const userError = ref('')
 const pwSuccess = ref(false)
 const pwError = ref('')
+const allowRegistration = ref(true)
 
 async function loadSettings() {
   try {
@@ -146,6 +157,23 @@ async function handleDeleteUser(userId) {
   await loadUsers()
 }
 
+async function loadAuthConfig() {
+  if (!isAdmin.value) return
+  try {
+    const cfg = await getAuthConfig()
+    allowRegistration.value = cfg.allow_registration
+  } catch { /* 静默 */ }
+}
+
+async function handleToggleRegistration(val) {
+  try {
+    await setAuthConfig(val)
+    allowRegistration.value = val
+  } catch (e) {
+    allowRegistration.value = !val  // 回滚 UI
+  }
+}
+
 async function handleChangePassword({ oldPassword, newPassword }) {
   pwError.value = ''
   pwSuccess.value = false
@@ -161,5 +189,6 @@ async function handleChangePassword({ oldPassword, newPassword }) {
 onMounted(() => {
   loadSettings()
   loadUsers()
+  loadAuthConfig()
 })
 </script>
