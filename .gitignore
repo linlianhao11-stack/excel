@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 CLAUDE.md
+AGENTS.md
 node_modules/
 backend/static/
 .env
@@ -8,3 +9,5 @@ backend/static/
 *.egg-info/
 dist/
 .vite/
+.DS_Store
+ui.pen
