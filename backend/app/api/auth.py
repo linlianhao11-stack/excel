@@ -32,6 +32,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class AuthConfigRequest(BaseModel):
+    allow_registration: bool
+
+
 def create_token(user_id: int, username: str, is_admin: bool) -> str:
     payload = {
         "user_id": user_id,
@@ -179,3 +183,11 @@ async def get_auth_config():
     """公开的认证配置，用于登录页决定是否显示注册入口"""
     allow = get_setting("allow_registration", "true") == "true"
     return {"allow_registration": allow}
+
+
+@router.put("/config")
+async def update_auth_config(
+    req: AuthConfigRequest, admin: dict = Depends(require_admin)
+):
+    set_setting("allow_registration", "true" if req.allow_registration else "false")
+    return {"ok": True}
