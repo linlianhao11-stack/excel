@@ -17,6 +17,15 @@ export function useAuth() {
     return data
   }
 
+  async function register(username, password) {
+    const { data } = await axios.post('/api/auth/register', { username, password })
+    token.value = data.token
+    user.value = data.user
+    localStorage.setItem('token', data.token)
+    localStorage.setItem('user', JSON.stringify(data.user))
+    return data
+  }
+
   function logout() {
     token.value = ''
     user.value = null
@@ -24,5 +33,5 @@ export function useAuth() {
     localStorage.removeItem('user')
   }
 
-  return { token, user, isLoggedIn, isAdmin, login, logout }
+  return { token, user, isLoggedIn, isAdmin, login, register, logout }
 }
