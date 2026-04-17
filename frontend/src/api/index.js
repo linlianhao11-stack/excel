@@ -147,8 +147,9 @@ export async function downloadFile(path, displayName = '') {
 }
 
 // Conversations API
-export async function listConversations() {
-  const { data } = await api.get('/conversations')
+export async function listConversations(scope = '') {
+  const params = scope ? { scope } : {}
+  const { data } = await api.get('/conversations', { params })
   return data.conversations
 }
 
