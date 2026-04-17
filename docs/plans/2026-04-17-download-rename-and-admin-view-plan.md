@@ -815,17 +815,17 @@ git commit -m "feat(admin): ConversationPreviewModal 对话预览弹窗"
       共 {{ conversations.length }} 条对话，来自 {{ uniqueUserCount }} 个用户
     </p>
 
-    <!-- 表格容器，宽度撑满 -->
-    <div class="rounded-xl overflow-hidden border" :style="{ borderColor: 'var(--border)' }">
-      <table class="w-full text-[13px]">
+    <!-- 表格容器：小屏横向滚动，保证每列不挤压 -->
+    <div class="rounded-xl border overflow-x-auto" :style="{ borderColor: 'var(--border)' }">
+      <table class="w-full text-[13px]" style="min-width: 720px">
         <thead :style="{ background: 'var(--background)' }">
           <tr>
-            <th class="px-4 py-3 text-left font-medium" :style="{ color: 'var(--text-muted)' }">用户</th>
-            <th class="px-4 py-3 text-left font-medium" :style="{ color: 'var(--text-muted)' }">对话标题</th>
-            <th class="px-4 py-3 text-left font-medium" :style="{ color: 'var(--text-muted)' }">更新时间</th>
-            <th class="px-4 py-3 text-center font-medium" :style="{ color: 'var(--text-muted)' }">消息</th>
-            <th class="px-4 py-3 text-center font-medium" :style="{ color: 'var(--text-muted)' }">文件</th>
-            <th class="px-4 py-3 text-right font-medium" :style="{ color: 'var(--text-muted)' }">操作</th>
+            <th class="px-4 py-3 text-left font-medium whitespace-nowrap" :style="{ color: 'var(--text-muted)', minWidth: '110px' }">用户</th>
+            <th class="px-4 py-3 text-left font-medium" :style="{ color: 'var(--text-muted)', minWidth: '200px' }">对话标题</th>
+            <th class="px-4 py-3 text-left font-medium whitespace-nowrap" :style="{ color: 'var(--text-muted)', minWidth: '110px' }">更新时间</th>
+            <th class="px-4 py-3 text-center font-medium whitespace-nowrap" :style="{ color: 'var(--text-muted)', minWidth: '64px' }">消息</th>
+            <th class="px-4 py-3 text-center font-medium whitespace-nowrap" :style="{ color: 'var(--text-muted)', minWidth: '64px' }">文件</th>
+            <th class="px-4 py-3 text-right font-medium whitespace-nowrap" :style="{ color: 'var(--text-muted)', minWidth: '140px' }">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -835,7 +835,7 @@ git commit -m "feat(admin): ConversationPreviewModal 对话预览弹窗"
             class="border-t transition-colors hover:opacity-90"
             :style="{ borderColor: 'var(--border)' }"
           >
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 whitespace-nowrap">
               <span
                 class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium"
                 :style="{ background: 'var(--primary)', color: 'white' }"
@@ -847,7 +847,7 @@ git commit -m "feat(admin): ConversationPreviewModal 对话预览弹窗"
             <td class="px-4 py-3" :style="{ color: 'var(--text)' }">
               {{ c.title || '未命名对话' }}
             </td>
-            <td class="px-4 py-3" :style="{ color: 'var(--text-muted)' }">
+            <td class="px-4 py-3 whitespace-nowrap" :style="{ color: 'var(--text-muted)' }">
               {{ formatTime(c.updated_at) }}
             </td>
             <td class="px-4 py-3 text-center">
@@ -862,7 +862,7 @@ git commit -m "feat(admin): ConversationPreviewModal 对话预览弹窗"
                 :style="{ background: 'var(--background)', color: 'var(--text-muted)' }"
               >{{ c.file_count }}</span>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 whitespace-nowrap">
               <div class="flex items-center justify-end gap-2">
                 <button
                   @click="preview = c"
@@ -957,26 +957,70 @@ git commit -m "feat(admin): AdminConversationsPanel 全局对话管理表格"
 
 **Files**: `frontend/src/components/SettingsPage.vue`
 
-**Step 1**：import + 模板加一个新 section（放在 UserManagement 之后、ChangePassword 之前）：
+**布局策略（解决"清晰可见"验收）**：
+- 既有的 `max-w-xl` 容器适合窄表单（AI 设置 / 用户管理 / 改密码），不适合 6 列表格
+- AdminConversationsPanel **放在设置页最底部，独立用 `max-w-5xl` 宽容器**，不挤窄列
+- 其他 admin section（RegistrationToggle / UserManagement）仍在窄容器，保持与原有视觉一致
+
+**Step 1**：Read 现有 SettingsPage.vue 模板结构。当前：
 
 ```vue
-<div v-if="isAdmin" class="h-px" style="background: var(--border)" />
-<AdminConversationsPanel v-if="isAdmin" />
+<div class="flex-1 overflow-y-auto">
+  <div class="max-w-xl px-6 py-14 mx-auto space-y-8">
+    <h1>设置</h1>
+    <!-- AiModelSettings / RegistrationToggle / UserManagement / ChangePassword -->
+  </div>
+</div>
 ```
 
-import：
+**Step 2**：改造为**双容器**布局（窄列 + 宽列）：
+
+```vue
+<div class="flex-1 overflow-y-auto">
+  <!-- 窄列：常规设置 -->
+  <div class="max-w-xl px-6 pt-14 mx-auto space-y-8">
+    <div>
+      <h1 class="text-2xl font-semibold" style="color: var(--text)">设置</h1>
+      <p class="text-[14px] mt-1" style="color: var(--text-muted)">
+        管理 AI 模型配置、用户账号和安全设置
+      </p>
+    </div>
+    <div class="h-px" style="background: var(--border)" />
+    <AiModelSettings ... />
+    <div class="h-px" style="background: var(--border)" />
+    <RegistrationToggle v-if="isAdmin" ... />
+    <div v-if="isAdmin && toggleError" ... />
+    <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
+    <UserManagement v-if="isAdmin" ... />
+    <div v-if="isAdmin" class="h-px" style="background: var(--border)" />
+    <ChangePassword ... />
+  </div>
+
+  <!-- 宽列：管理员全局对话表格，放最底部 -->
+  <div v-if="isAdmin" class="max-w-5xl px-6 py-14 mx-auto">
+    <AdminConversationsPanel />
+  </div>
+</div>
+```
+
+**关键点**：
+- 原 `py-14` 拆为窄列的 `pt-14` + 宽列的 `py-14`，避免两个容器之间出现双倍留白
+- `max-w-5xl` (1024px) 对 6 列表格舒适；非管理员用户看不到这段
+- 两个容器都 `mx-auto`，页面居中
+
+**Step 3**：import：
 
 ```js
 import AdminConversationsPanel from './settings/AdminConversationsPanel.vue'
 ```
 
-**Step 2**：`npm run build`
+**Step 4**：`npm run build` 零错误
 
-**Step 3**：Commit
+**Step 5**：Commit
 
 ```bash
 git add frontend/src/components/SettingsPage.vue
-git commit -m "feat(admin): SettingsPage 接入全局对话管理面板"
+git commit -m "feat(admin): SettingsPage 接入全局对话管理面板（窄列 + 宽列双容器）"
 ```
 
 ---
@@ -1021,6 +1065,11 @@ SSHPASS='theendqq123' sshpass -e ssh admin@192.168.124.3 "cd /home/admin/excel &
   - ✅ modify **驳回重试后** 再审批，文件名仍然是 `原名_已修改.xlsx`（没退化成 UUID）
 - create 流程：下载文件名是 `原名_汇总.xlsx` 或 `结果_时间戳.xlsx`
 - **多轮 modify 验证**：同一对话第一轮修改 → 审批 → 第二轮继续修改 → 审批 → 下载文件名仍然是 `原名_已修改.xlsx`（filename 稳定继承）
+- **布局验证**：
+  - 桌面宽屏（>1024px）：表格 6 列舒适展示，无横向滚动条
+  - 笔记本屏（~1280px）：表格舒展显示，不挤压
+  - 窄屏（<768px）：表格出现横向滚动条（`overflow-x-auto` + `min-width: 720px`），不崩版
+  - 设置页其他 section（AI 设置 / 用户管理 / 改密码）仍在窄列（max-w-xl），视觉层次清晰
 
 **Step 4**：commit message（如果有小修，无则跳过）
 
@@ -1030,8 +1079,16 @@ SSHPASS='theendqq123' sshpass -e ssh admin@192.168.124.3 "cd /home/admin/excel &
 
 - ✅ 数据库迁移无损（messages 加 output_display_name）
 - ✅ modify/create 两种模式下载都用新名
-- ✅ 管理员设置页表格**清晰易读**（用户 Badge 高对比、消息文件数 badge、相对时间）
+- ✅ 审批后首次下载 / 驳回重试 / 多轮 modify 三条链路命名都正确
+- ✅ 管理员设置页表格**清晰易读**（宽容器 max-w-5xl、6 列完整展示、窄屏横向滚动不崩版）
 - ✅ 管理员可预览任意对话
 - ✅ 管理员可删除任意对话
 - ✅ npm run build 零错误
 - ✅ NAS 部署后功能完整
+
+## 已知非阻塞问题（本次不修）
+
+- **file_count 统计口径**：`conversation_files` 表每轮 chat 都会 INSERT（`chat.py:89` + `conversations.save_conversation_files` 无去重），多轮对话同一文件会累计多行，`file_count` 会偏大/可能重复。本次接受这个既有行为，后续若需精准统计或附件去重，单独一轮改造：
+  - 方案 1: `save_conversation_files` 用 `INSERT OR IGNORE` 以 `(conv_id, file_id)` 为联合唯一键
+  - 方案 2: `file_count` 改为 `SELECT COUNT(DISTINCT file_id) FROM conversation_files WHERE ...`
+- **download.py 无文件归属校验**：已登录有效用户只要知道磁盘文件名都可下载（已在设计文档标注，本次接受现状）
