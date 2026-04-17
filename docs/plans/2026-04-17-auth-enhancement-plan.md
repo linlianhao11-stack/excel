@@ -994,7 +994,7 @@ git commit -m "feat(auth): useAuth 加 register 方法"
 import { ref } from 'vue'
 import { useAuth } from '../../composables/useAuth'
 
-const props = defineProps({
+defineProps({
   allowRegistration: { type: Boolean, default: false }
 })
 defineEmits(['switchToRegister'])
@@ -1356,7 +1356,7 @@ git commit -m "feat(auth): UserListRow.vue 单行用户展示 + 操作按钮"
 <script setup>
 import { ref } from 'vue'
 
-const props = defineProps({
+defineProps({
   username: { type: String, required: true },
   loading: { type: Boolean, default: false }
 })
@@ -1506,10 +1506,11 @@ async function handleResetConfirm(newPw) {
   }
 }
 
-async function handleToggleActive({ userId, isActive }) {
+async function handleToggleActive(user) {
+  // UserListRow emit 传入整个 user 对象；toggle 即取反
   localError.value = ''
   try {
-    await setUserActive(userId, isActive)
+    await setUserActive(user.id, !user.is_active)
     emit('refresh')
   } catch (e) {
     localError.value = e.response?.data?.detail || '操作失败'
@@ -1793,7 +1794,7 @@ sshpass -p 'theendqq123' scp frontend/src/components/settings/RegistrationToggle
 sshpass -p 'theendqq123' ssh admin@192.168.124.3 "cd /home/admin/excel && echo 'theendqq123' | sudo -S docker compose up -d --build"
 ```
 
-**Step 5: 生产验证**
+**Step 3: 生产验证**
 
 浏览器访问 http://192.168.124.3:8910：
 
@@ -1801,7 +1802,7 @@ sshpass -p 'theendqq123' ssh admin@192.168.124.3 "cd /home/admin/excel && echo '
 - [ ] admin 登录
 - [ ] 设置页：开放注册开关、用户管理三动作按钮完整
 
-**Step 6: 最终提交**
+**Step 4: 最终确认**
 
 ```bash
 cd ~/Desktop/Excel
