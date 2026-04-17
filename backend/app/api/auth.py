@@ -152,7 +152,7 @@ async def create_user(req: CreateUserRequest, admin: dict = Depends(require_admi
 async def list_users(admin: dict = Depends(require_admin)):
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, username, is_admin, created_at FROM users"
+        "SELECT id, username, is_admin, is_active, created_at FROM users ORDER BY id"
     ).fetchall()
     conn.close()
     return {"users": [dict(r) for r in rows]}
