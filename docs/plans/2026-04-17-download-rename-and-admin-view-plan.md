@@ -25,7 +25,7 @@
 
 ### Chunk B：管理员全局对话管理
 - Task 6: `conversations.py` list / get_messages / delete 加 admin scope + JOIN users
-- Task 7: `api/index.js` 新增 `listAllConversations` / `adminPreviewConversation`
+- Task 7: `api/index.js` 的 `listConversations` 支持 `scope` 参数
 - Task 8: 新建 `ConversationPreviewModal.vue`
 - Task 9: 新建 `AdminConversationsPanel.vue`（表格 + 预览 + 删除）
 - Task 10: `SettingsPage.vue` 接入
@@ -293,25 +293,85 @@ save_message(
 )
 ```
 
-**Step 4**：修改 `backend/app/api/diff.py`：
+**Step 4**：修改 `backend/app/api/diff.py` —— **本 Task 最关键的修复，闭环三条链路**：
 
-`diff.py:52` 取 `output_path = pending["output_path"]` 后，加：
+#### 4.1 approve 流程读取 + 写回 + 返回 display_name + **保持 current_file.filename 稳定**
+
+line 51-87 `approve_diff` 改为：
 
 ```python
-output_display_name = pending.get("output_display_name")
+pending = pending_diffs.pop(conv_id)
+output_path = pending["output_path"]
+output_display_name = pending.get("output_display_name")  # 新增
+diff_data = pending["diff"]
+user_message = pending.get("user_message", "")
+
+summary_text = generate_operation_summary(user_message, diff_data)
+
+state = conversation_state.setdefault(conv_id, {
+    "operation_history": [],
+    "current_file": None,
+})
+state["operation_history"].append(summary_text)
+
+try:
+    new_profile = profile_excel(output_path)
+except Exception as e:
+    logger.warning("重新profile失败: %s", e)
+    new_profile = {}
+
+# 关键：filename 稳定继承（不使用 UUID 磁盘名），path 更新为新输出
+prev_filename = (
+    state["current_file"]["filename"] if state.get("current_file")
+    else (pending["files"][0]["filename"] if pending.get("files") else output_path.rsplit("/", 1)[-1])
+)
+state["current_file"] = {
+    "file_id": f"result_{conv_id}_{len(state['operation_history'])}",
+    "filename": prev_filename,   # 稳定继承
+    "path": output_path,          # 新路径
+    "type": "excel",
+    "profile": new_profile,
+}
+
+# 写回数据库（含 display_name）
+update_last_assistant_output(conv_id, output_path, output_display_name)
+
+logger.info("Diff审批通过 conv=%s output=%s display=%s history_len=%d",
+            conv_id, output_path, output_display_name, len(state["operation_history"]))
+
+# 返回给前端，供 DiffReview.vue 立即下载
+return {"output_path": output_path, "output_display_name": output_display_name}
 ```
 
-line 82 `update_last_assistant_output(conv_id, output_path)` 改：
+#### 4.2 reject 重试流程带上 display_name（防重试后丢失）
+
+line 127-138 `event_stream` 的 `diff_review` 拦截分支改为：
 
 ```python
-update_last_assistant_output(conv_id, output_path, output_display_name)
+if event.get("type") == "diff_review":
+    pending_diffs[conv_id] = {
+        "messages": event["messages"],
+        "diff": event["diff"],
+        "output_path": event["output_path"],
+        "output_display_name": event.get("output_display_name"),  # 新增
+        "input_path": event["input_path"],
+        "file_paths": event["file_paths"],
+        "files": event.get("files", files),
+        "user_message": saved_user_message,
+        "retry_count": saved_retry_count,
+    }
+    frontend_event = {
+        "type": "diff_review",
+        "diff": event["diff"],
+    }
+    yield f"data: {json.dumps(frontend_event, ensure_ascii=False)}\n\n"
 ```
 
 **Step 5**：Commit
 
 ```bash
 git add backend/app/services/agent.py backend/app/api/chat.py backend/app/api/diff.py
-git commit -m "feat(download): agent/chat/diff 链路透传 output_display_name"
+git commit -m "feat(download): agent/chat/diff 链路透传 display_name + current_file filename 稳定继承"
 ```
 
 ---
@@ -400,13 +460,57 @@ async function handleDownload(path, displayName) {
 
 模板里把当前的 `@click="handleDownload(message.outputPath)"` 改为 `@click="handleDownload(message.outputPath, message.outputDisplayName)"`。按钮的文字（line ~136 "下载结果文件"）可以改为动态：`{{ message.outputDisplayName || '下载结果文件' }}`，让用户提前看到下载文件名。
 
-**Step 5**：`npm run build` 零错误
+**Step 5**：`MessageBubble.vue` 的 `onDiffApproved` 扩展，接收并存入 display_name：
 
-**Step 6**：Commit
+line 184 原：
+```js
+function onDiffApproved(outputPath) {
+  props.message.outputPath = outputPath
+  props.message.diff = null
+}
+```
+
+改为：
+```js
+function onDiffApproved(outputPath, displayName) {
+  props.message.outputPath = outputPath
+  props.message.outputDisplayName = displayName
+  props.message.diff = null
+}
+```
+
+**Step 6**：`DiffReview.vue` 的 `handleApprove`（line 164-181）改：
+
+```js
+async function handleApprove() {
+  if (!props.conversationId) return
+  approving.value = true
+  try {
+    const result = await approveDiff(props.conversationId)
+    if (result.output_path) {
+      approved.value = true
+      emit('approved', result.output_path, result.output_display_name)
+      await downloadFile(result.output_path, result.output_display_name)
+    } else if (result.error) {
+      alert(result.error)
+    }
+  } catch (e) {
+    alert('审批失败，请重试')
+  } finally {
+    approving.value = false
+  }
+}
+```
+
+注意 `emit('approved', ...)` 现在是两个参数；MessageBubble 的 `@approved="onDiffApproved"` 会自动把两个参数传给 handler。
+
+**Step 7**：`npm run build` 零错误
+
+**Step 8**：Commit
 
 ```bash
-git add frontend/src/api/index.js frontend/src/composables/useChat.js frontend/src/components/MessageBubble.vue
-git commit -m "feat(download): 前端下载支持 display_name + SSE/history 透传"
+git add frontend/src/api/index.js frontend/src/composables/useChat.js frontend/src/components/MessageBubble.vue frontend/src/components/DiffReview.vue
+git commit -m "feat(download): 前端下载透传 display_name（含审批后首次下载闭环 + SSE/history）"
 ```
 
 ---
@@ -888,10 +992,12 @@ tar cf - \
   backend/app/api/conversations.py \
   backend/app/api/download.py \
   backend/app/api/diff.py \
+  backend/app/api/chat.py \
   backend/app/services/agent.py \
   frontend/src/api/index.js \
   frontend/src/composables/useChat.js \
   frontend/src/components/MessageBubble.vue \
+  frontend/src/components/DiffReview.vue \
   frontend/src/components/SettingsPage.vue \
   frontend/src/components/settings/ConversationPreviewModal.vue \
   frontend/src/components/settings/AdminConversationsPanel.vue \
@@ -909,7 +1015,12 @@ SSHPASS='theendqq123' sshpass -e ssh admin@192.168.124.3 "cd /home/admin/excel &
 - 管理员登录 → 设置页看到"全局对话管理"表格
 - 表格清晰展示 用户 / 标题 / 时间 / 消息数 / 文件数
 - 点查看可弹出消息预览
-- 新发对话生成文件 → 下载时名字有意义（"原名_已修改.xlsx"）
+- **下载命名 3 条闭环链路都要验证**：
+  - ✅ modify 首轮审批通过后直接下载，文件名是 `原名_已修改.xlsx`
+  - ✅ 历史消息点下载按钮，文件名正确
+  - ✅ modify **驳回重试后** 再审批，文件名仍然是 `原名_已修改.xlsx`（没退化成 UUID）
+- create 流程：下载文件名是 `原名_汇总.xlsx` 或 `结果_时间戳.xlsx`
+- **多轮 modify 验证**：同一对话第一轮修改 → 审批 → 第二轮继续修改 → 审批 → 下载文件名仍然是 `原名_已修改.xlsx`（filename 稳定继承）
 
 **Step 4**：commit message（如果有小修，无则跳过）
 

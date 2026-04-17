@@ -29,8 +29,37 @@
 
 ### 来源识别
 
-- modify 模式：从 tool call args 的 `source` 字段（如 `INPUT_PATH_1`）查 `conversation_files.filename`
-- create 模式：从 `conversation_files` 取第一个 `filename`；空列表 → 时间戳名
+- modify 模式：从 tool call args 的 `source` 字段（如 `INPUT_PATH_1`）→ 对应到 `files` 参数里的第 N 个 excel 文件 → 取 `filename`
+- create 模式：从 `files` 取第一个 excel 文件的 `filename`；无输入 → 时间戳名
+
+### 多轮对话命名稳定性（关键设计）
+
+**问题**：`diff.py approve` 当前把 `state["current_file"]["filename"]` 设为 `output_path.rsplit("/", 1)[-1]` = `result_xxx.xlsx`（UUID 磁盘名），第二轮起 agent 的 `files` 参数里 filename 就是乱码，会退化为 `result_xxx_已修改.xlsx`。
+
+**解决**：审批通过时 `current_file.filename` **继承上一轮的 filename**（= 最初的上传 filename），只更新 `path`。filename 字段表达"语义来源"而非"磁盘路径"：
+
+```python
+# 原代码（会退化）
+state["current_file"] = {
+    "filename": output_path.rsplit("/", 1)[-1],  # "result_xxx.xlsx"
+    ...
+}
+
+# 改为（稳定）
+prev_filename = (
+    state["current_file"]["filename"] if state.get("current_file")
+    else pending["files"][0]["filename"]  # 首次审批：取原始上传名
+)
+state["current_file"] = {
+    "filename": prev_filename,  # "销售.xlsx" 链式稳定
+    "path": output_path,         # 但 path 指向新输出
+    ...
+}
+```
+
+这样递归下来，无论经过多少轮 modify，`filename` 始终是最初的 `销售.xlsx`，每轮 display_name 都是 `销售_已修改.xlsx`。浏览器对同名文件会自动加 `(1)(2)` 后缀，可接受。
+
+_compute_display_name 不需要剥后缀逻辑。
 
 ## 方案 2：管理员全局对话管理
 
@@ -101,7 +130,7 @@
 
 ### 权限 & 安全
 
-- 管理员可下载任意对话的结果文件（`/api/download` 目前只校验 JWT + is_active，未做文件归属校验，已满足需求）
+- 管理员可下载任意对话的结果文件。**注意现状**：`/api/download` 目前只校验 JWT + is_active，不校验文件归属——任何已登录有效用户，只要知道磁盘文件名都可下载。这是**本次接受的既有现状**（YAGNI），本次 NOT 改文件归属校验。若将来有隐私隔离需求，需单独一轮改造：下载端点加入"文件所属 conversation 所属 user_id" 校验（非 admin 只能下载自己对话的文件）。
 - 管理员可删除任意对话（级联删消息 `ON DELETE CASCADE` 已有）
 - 不实现"用户操作日志"（YAGNI，管理员主动操作，不需要审计）
 
