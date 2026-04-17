@@ -43,18 +43,32 @@ def create_token(user_id: int, username: str, is_admin: bool) -> str:
 
 
 def get_current_user(request: Request) -> dict:
-    """FastAPI 依赖：从 Authorization header 解析当前用户"""
+    """FastAPI 依赖：解析 token + 校验账号仍有效"""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(401, "未登录")
     token = auth_header[7:]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "登录已过期，请重新登录")
     except jwt.InvalidTokenError:
         raise HTTPException(401, "无效的登录凭证")
+
+    # 实时校验账号是否被禁用
+    conn = get_db()
+    row = conn.execute(
+        "SELECT is_active FROM users WHERE id = ?", (payload["user_id"],)
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(401, "账号不存在")
+    if not row["is_active"]:
+        raise HTTPException(401, "账号已被禁用")
+
+    # 注入 state，供 refresh 中间件读取
+    request.state.user_payload = payload
+    return payload
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
